@@ -67,6 +67,18 @@
 				"Android",
 				"VisionOS"
 			]
+		},
+		{
+			"Name": "OculusInteraction",
+			"Enabled": true,
+			"SupportedTargetPlatforms": [
+				"Win64",
+				"Android"
+			]
+		},
+		{
+			"Name": "MotionWarping",
+			"Enabled": true
 		}
 	]
 }
