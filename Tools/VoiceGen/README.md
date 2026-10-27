@@ -76,16 +76,12 @@ Sugestão de mapeamento:
 
 ## 6. Lip sync
 
-O componente expõe `Mouth Open` (0..1, suavizado) a partir do envelope do áudio.
+Com o Rhubarb Lip Sync em `Tools/LipSync/rhubarb` (veja `Tools/LipSync/README.md`), o gerador
+grava a coluna `Visemas` no DataTable e o componente anima os morph targets `JawOpen`,
+`MouthPucker`, `MouthWide` e `LowerLipIn` do `SK_Remy_Visemas` no tempo de cada fonema.
 
-O `SK_Remy` (rig Mixamo) **não tem osso de mandíbula nem morph targets**, então a boca não abre sem
-alterar o modelo. Opções:
-
-- **Agora, sem mexer no modelo:** no AnimBP do paciente, leia `Mouth Open` do componente e use um
-  nó *Transform (Modify) Bone* no osso `Head` com uma rotação pequena (2–4°) multiplicada pelo valor.
-  Dá vida à fala sem custo de performance.
-- **Lip sync real:** no Blender, adicione um morph target `MouthOpen` (ou um osso `Jaw` pesado no
-  queixo), reimporte o `SK_Remy` com *Import Morph Targets* e preencha `Mouth Morph Target` no componente.
+Sem visemas (Rhubarb ausente ou `SpeakSound` com som avulso), a boca segue o volume do áudio
+apenas com `JawOpen`. O valor `Mouth Open` (0..1) continua exposto para uso no AnimBP.
 
 ## Performance (Quest)
 

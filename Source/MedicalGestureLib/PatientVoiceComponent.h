@@ -30,13 +30,17 @@ struct FPatientVoiceLine : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
 	TSoftObjectPtr<USoundBase> Som;
+
+	// Formas de boca do Rhubarb Lip Sync no formato "inicio:forma;..." (ex.: "0.00:X;0.06:D")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	FString Visemas;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPatientSpeechStarted, FName, LineId, const FText&, Texto);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPatientSpeechFinished, FName, LineId);
 
-// Toca as falas do paciente a partir da cabeça (áudio espacial) e gera um valor de abertura de boca
-// a partir do envelope do áudio, para morph target ou para o AnimBP (osso da mandíbula/cabeça).
+// Toca as falas do paciente a partir da cabeça (áudio espacial) e anima a boca: pelos visemas da
+// linha quando existirem, senão pelo envelope do áudio (só JawOpen).
 UCLASS(ClassGroup = (Audio), meta = (BlueprintSpawnableComponent))
 class MEDICALGESTURELIB_API UPatientVoiceComponent : public UActorComponent
 {
@@ -60,18 +64,35 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|Spatial")
 	FName HeadBoneName = TEXT("Head");
 
-	// Morph target da boca; deixe vazio se a malha não tiver (use MouthOpen no AnimBP)
+	// Morph targets criados por Tools/LipSync/criar_visemas_remy.py; deixe vazio para ignorar
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync")
-	FName MouthMorphTarget = NAME_None;
+	FName JawOpenMorph = TEXT("JawOpen");
 
-	// Multiplicador do envelope do áudio (fala costuma ficar entre 0.05 e 0.3)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync")
+	FName MouthPuckerMorph = TEXT("MouthPucker");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync")
+	FName MouthWideMorph = TEXT("MouthWide");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync")
+	FName LowerLipInMorph = TEXT("LowerLipIn");
+
+	// Intensidade geral da boca (1 = formas completas)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0", ClampMax = "1.5"))
+	float MouthIntensity = 1.0f;
+
+	// Atraso dos visemas em segundos, para compensar a latência de áudio do dispositivo
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync")
+	float VisemeTimeOffset = 0.0f;
+
+	// Multiplicador do envelope do áudio, usado quando a linha não tem visemas
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0"))
 	float EnvelopeGain = 4.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0"))
-	float SmoothingSpeed = 18.0f;
+	float SmoothingSpeed = 20.0f;
 
-	// Abertura da boca suavizada (0..1), para ler no AnimBP
+	// Abertura da mandíbula suavizada (0..1), para ler no AnimBP
 	UPROPERTY(BlueprintReadOnly, Category = "Voice|LipSync")
 	float MouthOpen = 0.0f;
 
@@ -85,6 +106,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	bool SpeakLine(FName LineId);
 
+	// Toca um som avulso; a boca segue o envelope do áudio
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	bool SpeakSound(USoundBase* Sound, FName LineId);
 
@@ -102,6 +124,19 @@ protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
+	struct FVisemeCue
+	{
+		float Time = 0.0f;
+		TCHAR Shape = TEXT('X');
+	};
+
+	enum EMouthChannel { Jaw, Pucker, Wide, LipIn, NumChannels };
+
+	bool PlayVoice(USoundBase* Sound, FName LineId, const FString& Visemes);
+	void ParseVisemes(const FString& Visemes);
+	void SetShapeTarget(TCHAR Shape);
+	void ApplyMorphs();
+
 	UFUNCTION()
 	void HandleEnvelope(const USoundWave* PlayingSoundWave, const float EnvelopeValue);
 
@@ -116,5 +151,9 @@ private:
 
 	TWeakObjectPtr<USkeletalMeshComponent> PatientMesh;
 	FName CurrentLine;
-	float TargetMouthOpen = 0.0f;
+	TArray<FVisemeCue> Cues;
+	int32 CueIndex = 0;
+	float SpeechTime = 0.0f;
+	float TargetMouth[NumChannels] = {};
+	float CurrentMouth[NumChannels] = {};
 };

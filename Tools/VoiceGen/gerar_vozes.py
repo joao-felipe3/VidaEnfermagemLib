@@ -1,7 +1,8 @@
 """Gera as falas do paciente (.wav) a partir de falas_paciente.csv usando Piper (offline).
 
 Saída: WAV mono, 16-bit, 44.1 kHz em ./output, mais DT_FalasPaciente.csv pronto para
-importar como DataTable (struct FPatientVoiceLine) na Unreal.
+importar como DataTable (struct FPatientVoiceLine) na Unreal. Se o Rhubarb Lip Sync estiver em
+../LipSync/rhubarb, cada fala também ganha a sequência de visemas (coluna Visemas).
 
 Uso:
     .venv\\Scripts\\python gerar_vozes.py                 # gera todas as falas
@@ -12,6 +13,7 @@ Uso:
 import argparse
 import csv
 import io
+import json
 import subprocess
 import sys
 import wave
@@ -26,6 +28,7 @@ TARGET_RATE = 44100
 PEAK_DBFS = -3.0
 PAD_START_S = 0.05
 PAD_END_S = 0.20
+RHUBARB = next((ROOT.parent / "LipSync" / "rhubarb").glob("**/rhubarb.exe"), None)
 
 
 def ensure_voice(voice_name: str) -> Path:
@@ -79,6 +82,19 @@ def write_wav(path: Path, samples: np.ndarray, rate: int) -> None:
         wav_file.writeframes(samples.tobytes())
 
 
+def lip_sync(wav_path: Path) -> str:
+    """Formas de boca do Rhubarb (A-H, X) como "inicio:forma;..." para o DataTable."""
+    json_path = wav_path.with_suffix(".rhubarb.json")
+    subprocess.run(
+        [str(RHUBARB), "-r", "phonetic", "-f", "json", "--extendedShapes", "GHX", "--quiet",
+         "-o", str(json_path), str(wav_path)],
+        check=True, capture_output=True,
+    )
+    cues = json.loads(json_path.read_text(encoding="utf-8"))["mouthCues"]
+    json_path.unlink()
+    return ";".join(f"{cue['start']:.2f}:{cue['value']}" for cue in cues)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--csv", type=Path, default=ROOT / "falas_paciente.csv")
@@ -87,7 +103,11 @@ def main() -> None:
     parser.add_argument("--speed", type=float, default=1.0, help="<1 mais lento, >1 mais rápido")
     parser.add_argument("--only", nargs="*", help="Gera apenas estes ids")
     parser.add_argument("--ue-path", default="/Game/Audio/Paciente", help="Pasta onde os .wav serão importados na Unreal")
+    parser.add_argument("--sem-lipsync", action="store_true", help="Não gera visemas com o Rhubarb")
     args = parser.parse_args()
+    use_lip_sync = RHUBARB is not None and not args.sem_lipsync
+    if RHUBARB is None and not args.sem_lipsync:
+        print("Aviso: Rhubarb não encontrado em ../LipSync/rhubarb; gerando sem visemas.")
 
     with args.csv.open(encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
@@ -102,16 +122,21 @@ def main() -> None:
         text = (row.get("texto_tts") or "").strip() or row["texto"].strip()
         samples, rate = synthesize(voice, text, config)
         samples = finalize(resample(samples, rate, TARGET_RATE), TARGET_RATE)
-        write_wav(args.out / f"{row['id']}.wav", samples, TARGET_RATE)
+        wav_path = args.out / f"{row['id']}.wav"
+        write_wav(wav_path, samples, TARGET_RATE)
+        if use_lip_sync:
+            (args.out / f"{row['id']}.visemas.txt").write_text(lip_sync(wav_path), encoding="utf-8")
         print(f"  {row['id']}.wav  ({len(samples) / TARGET_RATE:.1f}s)")
 
     # DataTable da Unreal: a primeira coluna vira o nome da linha. BOM garante acentos no import.
     with (args.out / "DT_FalasPaciente.csv").open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["---", "Passo", "Gatilho", "Texto", "Som"])
+        writer.writerow(["---", "Passo", "Gatilho", "Texto", "Som", "Visemas"])
         for row in rows:
             asset = f"{args.ue_path}/{row['id']}.{row['id']}"
-            writer.writerow([row["id"], row["passo"], row["gatilho"], row["texto"], asset])
+            visemes_file = args.out / f"{row['id']}.visemas.txt"
+            visemes = visemes_file.read_text(encoding="utf-8") if visemes_file.exists() else ""
+            writer.writerow([row["id"], row["passo"], row["gatilho"], row["texto"], asset, visemes])
 
     print(f"Pronto: {args.out}")
 

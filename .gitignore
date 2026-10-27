@@ -95,3 +95,5 @@ CONTEXTO_E_PROGRESSO.md
 Tools/VoiceGen/.venv/
 Tools/VoiceGen/models/
 Tools/VoiceGen/output/
+Tools/LipSync/rhubarb/
+Tools/LipSync/previews/

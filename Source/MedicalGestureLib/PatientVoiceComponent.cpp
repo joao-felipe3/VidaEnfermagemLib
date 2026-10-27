@@ -68,10 +68,15 @@ bool UPatientVoiceComponent::SpeakLine(FName LineId)
 		return false;
 	}
 
-	return SpeakSound(Line->Som.LoadSynchronous(), LineId);
+	return PlayVoice(Line->Som.LoadSynchronous(), LineId, Line->Visemas);
 }
 
 bool UPatientVoiceComponent::SpeakSound(USoundBase* Sound, FName LineId)
+{
+	return PlayVoice(Sound, LineId, FString());
+}
+
+bool UPatientVoiceComponent::PlayVoice(USoundBase* Sound, FName LineId, const FString& Visemes)
 {
 	if (!Sound || !VoiceAudio)
 	{
@@ -82,6 +87,7 @@ bool UPatientVoiceComponent::SpeakSound(USoundBase* Sound, FName LineId)
 	StopSpeaking();
 
 	CurrentLine = LineId;
+	ParseVisemes(Visemes);
 	VoiceAudio->SetSound(Sound);
 	VoiceAudio->Play();
 	SetComponentTickEnabled(true);
@@ -96,7 +102,8 @@ void UPatientVoiceComponent::StopSpeaking()
 	{
 		VoiceAudio->Stop();
 	}
-	TargetMouthOpen = 0.0f;
+	Cues.Reset();
+	SetShapeTarget(TEXT('X'));
 }
 
 bool UPatientVoiceComponent::IsSpeaking() const
@@ -116,9 +123,52 @@ FText UPatientVoiceComponent::GetLineText(FName LineId) const
 	return FText::GetEmpty();
 }
 
+void UPatientVoiceComponent::ParseVisemes(const FString& Visemes)
+{
+	Cues.Reset();
+	CueIndex = 0;
+	SpeechTime = 0.0f;
+
+	TArray<FString> Entries;
+	Visemes.ParseIntoArray(Entries, TEXT(";"));
+	for (const FString& Entry : Entries)
+	{
+		FString TimeText, ShapeText;
+		if (Entry.Split(TEXT(":"), &TimeText, &ShapeText) && !ShapeText.IsEmpty())
+		{
+			Cues.Add({ FCString::Atof(*TimeText), ShapeText[0] });
+		}
+	}
+}
+
+void UPatientVoiceComponent::SetShapeTarget(TCHAR Shape)
+{
+	// Peso de JawOpen, MouthPucker, MouthWide e LowerLipIn para cada forma do Rhubarb:
+	// A = M/B/P, B = K/S/T/I, C = E, D = A, E = O, F = U/W, G = F/V, H = L, X = repouso
+	static const TMap<TCHAR, TArray<float>> Shapes = {
+		{ TEXT('A'), { 0.00f, 0.00f, 0.00f, 0.00f } },
+		{ TEXT('B'), { 0.12f, 0.00f, 0.35f, 0.00f } },
+		{ TEXT('C'), { 0.35f, 0.00f, 0.25f, 0.00f } },
+		{ TEXT('D'), { 0.70f, 0.00f, 0.10f, 0.00f } },
+		{ TEXT('E'), { 0.30f, 0.45f, 0.00f, 0.00f } },
+		{ TEXT('F'), { 0.10f, 0.90f, 0.00f, 0.00f } },
+		{ TEXT('G'), { 0.08f, 0.00f, 0.10f, 0.90f } },
+		{ TEXT('H'), { 0.40f, 0.00f, 0.10f, 0.00f } },
+	};
+
+	const TArray<float>* Weights = Shapes.Find(Shape);
+	for (int32 Channel = 0; Channel < NumChannels; ++Channel)
+	{
+		TargetMouth[Channel] = Weights ? (*Weights)[Channel] * MouthIntensity : 0.0f;
+	}
+}
+
 void UPatientVoiceComponent::HandleEnvelope(const USoundWave* PlayingSoundWave, const float EnvelopeValue)
 {
-	TargetMouthOpen = FMath::Clamp(EnvelopeValue * EnvelopeGain, 0.0f, 1.0f);
+	if (Cues.Num() == 0 && IsSpeaking())
+	{
+		TargetMouth[Jaw] = FMath::Clamp(EnvelopeValue * EnvelopeGain, 0.0f, 1.0f) * MouthIntensity;
+	}
 }
 
 void UPatientVoiceComponent::HandleAudioFinished()
@@ -129,7 +179,8 @@ void UPatientVoiceComponent::HandleAudioFinished()
 		return;
 	}
 
-	TargetMouthOpen = 0.0f;
+	Cues.Reset();
+	SetShapeTarget(TEXT('X'));
 	const FName FinishedLine = CurrentLine;
 	CurrentLine = NAME_None;
 	OnSpeechFinished.Broadcast(FinishedLine);
@@ -139,16 +190,51 @@ void UPatientVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	MouthOpen = FMath::FInterpTo(MouthOpen, TargetMouthOpen, DeltaTime, SmoothingSpeed);
-
-	if (!IsSpeaking() && MouthOpen < KINDA_SMALL_NUMBER)
+	if (Cues.Num() > 0 && IsSpeaking())
 	{
-		MouthOpen = 0.0f;
-		SetComponentTickEnabled(false);
+		SpeechTime += DeltaTime;
+		const float VisemeTime = SpeechTime - VisemeTimeOffset;
+		while (CueIndex + 1 < Cues.Num() && Cues[CueIndex + 1].Time <= VisemeTime)
+		{
+			++CueIndex;
+		}
+		SetShapeTarget(Cues[CueIndex].Shape);
 	}
 
-	if (!MouthMorphTarget.IsNone() && PatientMesh.IsValid())
+	bool bMoving = IsSpeaking();
+	for (int32 Channel = 0; Channel < NumChannels; ++Channel)
 	{
-		PatientMesh->SetMorphTarget(MouthMorphTarget, MouthOpen);
+		CurrentMouth[Channel] = FMath::FInterpTo(CurrentMouth[Channel], TargetMouth[Channel], DeltaTime, SmoothingSpeed);
+		if (CurrentMouth[Channel] < KINDA_SMALL_NUMBER && TargetMouth[Channel] == 0.0f)
+		{
+			CurrentMouth[Channel] = 0.0f;
+		}
+		bMoving |= CurrentMouth[Channel] > 0.0f;
+	}
+	MouthOpen = CurrentMouth[Jaw];
+
+	ApplyMorphs();
+
+	if (!bMoving)
+	{
+		SetComponentTickEnabled(false);
+	}
+}
+
+void UPatientVoiceComponent::ApplyMorphs()
+{
+	USkeletalMeshComponent* Mesh = PatientMesh.Get();
+	if (!Mesh)
+	{
+		return;
+	}
+
+	const FName Morphs[NumChannels] = { JawOpenMorph, MouthPuckerMorph, MouthWideMorph, LowerLipInMorph };
+	for (int32 Channel = 0; Channel < NumChannels; ++Channel)
+	{
+		if (!Morphs[Channel].IsNone())
+		{
+			Mesh->SetMorphTarget(Morphs[Channel], CurrentMouth[Channel]);
+		}
 	}
 }
