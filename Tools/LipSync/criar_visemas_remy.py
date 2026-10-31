@@ -4,10 +4,13 @@ Rodar com o Blender em modo background:
     blender -b --factory-startup --python criar_visemas_remy.py -- <SK_Remy.fbx> <saida.fbx> [pasta_previews]
 
 Morph targets gerados (todos 0..1):
-    JawOpen      abre a mandíbula (pele, lábio inferior, dentes de baixo e língua)
+    JawOpen      abre a mandíbula (pele, lábio inferior, dentes e gengiva de baixo e língua)
     MouthPucker  bico (O, U)
     MouthWide    lábios esticados (I, E, S)
     LowerLipIn   lábio inferior sob os dentes de cima (F, V)
+    LipsPress    lábios fechados e pressionados (M, B, P)
+    UpperLipUp   lábio superior sobe e mostra os dentes (S, E, F)
+    TongueUp     ponta da língua atrás dos dentes de cima (L, T, D, N)
 
 As coordenadas abaixo foram medidas no FBX exportado do SK_Remy da Unreal.
 """
@@ -30,8 +33,9 @@ SEAM_Z = 3.357                        # linha entre os lábios
 MOUTH_CENTER = Vector((0.0, -0.245, SEAM_Z))
 MOUTH_HALF_WIDTH = 0.062              # cantos da boca (o FBX está em ~2x a escala real)
 JAW_PIVOT = Vector((0.0, -0.050, 3.420))
-JAW_ANGLE = math.radians(12.0)
-UPPER_TEETH_MIN_Z = 3.350             # centróide das ilhas dos dentes de cima
+JAW_ANGLE = math.radians(16.0)
+UPPER_Z = 3.350                       # centróides acima disto ficam com o crânio (dentes, gengiva)
+TONGUE_Z = (3.350, 3.360)             # faixa do centróide da língua entre as ilhas grandes
 
 
 def smoothstep(e0, e1, x):
@@ -59,17 +63,18 @@ def islands_of(me):
 
 
 def mouth_interior_islands(me, W):
-    """Dentes e língua: ilhas pequenas inteiramente dentro da boca."""
+    """Ilhas inteiramente dentro da boca: cada dente é uma ilha; as grandes (>150 vértices) são a
+    gengiva/céu da boca de cima, a língua e a gengiva/assoalho de baixo, separadas pelo centróide."""
     def inside(p):
         return abs(p.x) < 0.09 and 3.28 < p.z < 3.42 and -0.25 < p.y < -0.03
 
     result = {}
     for verts in islands_of(me):
         if len(verts) < 3000 and all(inside(W[i]) for i in verts):
-            center = sum((W[i] for i in verts), Vector()) / len(verts)
-            if len(verts) > 150:
+            z = sum(W[i].z for i in verts) / len(verts)
+            if len(verts) > 150 and TONGUE_Z[0] < z <= TONGUE_Z[1]:
                 kind = "tongue"
-            elif center.z > UPPER_TEETH_MIN_Z:
+            elif z > UPPER_Z:
                 kind = "upper"
             else:
                 kind = "lower"
@@ -164,14 +169,25 @@ def build(o):
                 key.data[i].co = Mi @ q
         return key
 
+    def is_lower_lip(i):
+        return side.get(i, 0.0) >= 0.5
+
     def jaw(i, p):
         kind = interior.get(i)
         if kind == "upper":
             return None
-        w = {"lower": 1.0, "tongue": 0.7}.get(kind) if kind else jaw_weight(p, side.get(i))
+        if not kind and lip_weight(p) and not is_lower_lip(i):
+            # O lábio de cima sobe um pouco quando a boca abre
+            return p + Vector((0.0, 0.0, 0.003 * lip_weight(p)))
+        w = {"lower": 1.0, "tongue": 0.75}.get(kind) if kind else jaw_weight(p, side.get(i))
         if not w:
             return None
-        return p.lerp(rot @ p, w)
+        q = p.lerp(rot @ p, w)
+        if not kind:
+            # O lábio de baixo cai um pouco mais que o queixo e vira levemente para fora
+            lw = lip_weight(p, rx=0.07, rz=0.03) * w
+            q += Vector((0.0, -0.004 * lw, -0.005 * lw))
+        return q
 
     def pucker(i, p):
         if i in interior:
@@ -198,10 +214,38 @@ def build(o):
             return None
         return Vector((p.x, p.y + 0.012 * w, p.z + 0.008 * w))
 
+    def lips_press(i, p):
+        if i in interior:
+            return None
+        w = lip_weight(p, rx=0.07, rz=0.026)
+        if not w:
+            return None
+        dz = 0.0025 * w if is_lower_lip(i) else -0.0015 * w
+        return Vector((p.x * (1.0 - 0.03 * w), p.y + 0.003 * w, p.z + dz))
+
+    def upper_lip_up(i, p):
+        if i in interior or is_lower_lip(i):
+            return None
+        w = lip_weight(p, rx=0.065, rz=0.03)
+        if not w:
+            return None
+        return Vector((p.x, p.y - 0.002 * w, p.z + 0.008 * w))
+
+    tongue_tip_y = min((W[i].y for i, k in interior.items() if k == "tongue"), default=0.0)
+
+    def tongue_up(i, p):
+        if interior.get(i) != "tongue":
+            return None
+        w = smoothstep(tongue_tip_y + 0.12, tongue_tip_y + 0.01, p.y)   # só a parte da frente
+        return Vector((p.x, p.y + 0.004 * w, p.z + 0.018 * w))
+
     add_key("JawOpen", jaw)
     add_key("MouthPucker", pucker)
     add_key("MouthWide", wide)
     add_key("LowerLipIn", lower_lip_in)
+    add_key("LipsPress", lips_press)
+    add_key("UpperLipUp", upper_lip_up)
+    add_key("TongueUp", tongue_up)
 
 
 def render_previews(o, folder):
@@ -212,21 +256,32 @@ def render_previews(o, folder):
     scene.display.shading.show_cavity = True
     scene.render.resolution_x = scene.render.resolution_y = 600
     center = MOUTH_CENTER + Vector((0, 0, -0.005))
+    # Uma pose por forma do Rhubarb, com os mesmos pesos do UPatientVoiceComponent
     poses = {
         "neutro": {},
-        "JawOpen": {"JawOpen": 1.0},
-        "MouthPucker": {"MouthPucker": 1.0, "JawOpen": 0.2},
-        "MouthWide": {"MouthWide": 1.0, "JawOpen": 0.25},
-        "LowerLipIn": {"LowerLipIn": 1.0, "JawOpen": 0.1},
+        "A_MBP": {"LipsPress": 1.0},
+        "B_KST": {"JawOpen": 0.10, "MouthWide": 0.35, "UpperLipUp": 0.45, "TongueUp": 0.2},
+        "C_E": {"JawOpen": 0.35, "MouthWide": 0.30, "UpperLipUp": 0.25},
+        "D_A": {"JawOpen": 0.75, "MouthWide": 0.10, "UpperLipUp": 0.10},
+        "E_O": {"JawOpen": 0.35, "MouthPucker": 0.50},
+        "F_U": {"JawOpen": 0.12, "MouthPucker": 0.95},
+        "G_FV": {"JawOpen": 0.06, "MouthWide": 0.10, "LowerLipIn": 0.90, "UpperLipUp": 0.35},
+        "H_L": {"JawOpen": 0.35, "MouthWide": 0.10, "UpperLipUp": 0.10, "TongueUp": 1.0},
     }
     keys = o.data.shape_keys.key_blocks
-    for view, direction in (("frente", Vector((0, -1, 0))), ("lado", Vector((1, -0.35, 0)).normalized())):
+    # "frente" e "lado" ortográficos; "aluno" em perspectiva, de onde o estudante olha o paciente
+    views = (("frente", Vector((0, -1, 0)), None), ("lado", Vector((1, -0.35, 0)).normalized(), None),
+             ("aluno", Vector((0.25, -0.9, 0.15)).normalized(), 85))
+    for view, direction, lens in views:
         cam_data = bpy.data.cameras.new(view)
-        cam_data.type = "ORTHO"
-        cam_data.ortho_scale = 0.30
+        if lens:
+            cam_data.lens = lens
+        else:
+            cam_data.type = "ORTHO"
+            cam_data.ortho_scale = 0.30
         cam = bpy.data.objects.new(view, cam_data)
         scene.collection.objects.link(cam)
-        cam.location = center + direction * 1.0
+        cam.location = center + direction * (0.95 if lens else 1.0)
         cam.rotation_euler = (-direction).to_track_quat("-Z", "Y").to_euler()
         scene.camera = cam
         for pose, values in poses.items():

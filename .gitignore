@@ -1,4 +1,6 @@
-# Visual Studio 2015 user specific files
+# Credentials & env
+.env
+.env.*
 .vs/
 
 # Compiled Object files
@@ -88,12 +90,12 @@ Plugins/**/Intermediate/
 # Cache files for the editor to use
 DerivedDataCache/
 
-# Documentos locais de contexto
-CONTEXTO_E_PROGRESSO.md
-
 # Gerador de voz (ambiente, modelos e audios gerados)
 Tools/VoiceGen/.venv/
 Tools/VoiceGen/models/
 Tools/VoiceGen/output/
 Tools/LipSync/rhubarb/
 Tools/LipSync/previews/
+Tools/VoiceGen/amostras/
+__pycache__/
+*.pyc

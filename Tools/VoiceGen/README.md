@@ -1,7 +1,6 @@
-# Voz do Paciente (Piper TTS + UPatientVoiceComponent)
+# Voz do Paciente (Google AI Studio Gemini TTS / Piper / UPatientVoiceComponent)
 
-Falas do paciente geradas offline com Piper (pt-BR, voz masculina `pt_BR-faber-medium`) e tocadas
-na cabeça do Remy com áudio espacial e abertura de boca baseada no volume do áudio.
+Falas do paciente com voz jovem e natural (jovem de 24 anos) geradas via Google AI Studio (`gemini-3.8-flash-tts`, voz `Puck`), com visemas de sincronia labial calculados pelo Rhubarb e tocadas na cabeça do Remy com áudio espacial e abertura de boca anatômica.
 
 ## 1. Editar as falas
 
@@ -14,55 +13,57 @@ na cabeça do Remy com áudio espacial e abertura de boca baseada no volume do �
 | `gatilho`   | quando a fala deve tocar (documentação)                             |
 | `texto`     | legenda exibida                                                      |
 | `texto_tts` | opcional: texto falado, quando difere da legenda (números por extenso) |
-
-Textos com vírgula precisam ficar entre aspas.
+| `disparo`   | texto exato da pergunta ou alternativa do quiz que faz o paciente dizer esta fala |
 
 ## 2. Gerar os áudios
 
-Primeira vez:
+### Opção A (Recomendada - Google AI Studio / Gemini 3.8 Flash TTS):
+Basta dar duplo clique em `gerar_vozes_gemini.bat` dentro de `Tools/VoiceGen/`.
+Ele usa a chave `AI_STUDIO_KEY` do `.env` e gera os 18 áudios com entonação humana jovem e os visemas do Rhubarb.
 
-```bash
-python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-```
+### Opção B (Edge-TTS ou Piper Offline):
+- `gerar_vozes_edge.bat`: voz neural via Edge-TTS.
+- `gerar_vozes.bat`: voz local offline via Piper TTS.
 
-Gerar:
+## 3. Importar e configurar na Unreal (automático)
 
-```bash
-.venv\Scripts\python gerar_vozes.py
-```
+Com o editor **fechado**:
+Dê duplo clique em `importar_na_unreal.bat`.
 
-Opções: `--only P2_nome_data P5_consentimento`, `--voice pt_BR-cadu-medium`, `--speed 0.95`.
-A voz é baixada para `models/` na primeira execução. Saída em `output/`:
-WAVs mono 16-bit 44.1 kHz e `DT_FalasPaciente.csv`.
+O script:
+1. Importa os `.wav` de `output/` para `/Game/Audio/Paciente`.
+2. Importa `DT_FalasPaciente.csv` como DataTable com Row Type **PatientVoiceLine**.
+3. No `BP_Patient`: troca a malha por `SK_Remy_Visemas` e adiciona o componente **PatientVoice** apontando para `DT_FalasPaciente`.
 
-## 3. Importar na Unreal
+O script:
 
-1. Arraste os `.wav` de `output/` para `Content/Audio/Paciente` (o caminho precisa bater com
-   `--ue-path`, padrão `/Game/Audio/Paciente`).
-2. Arraste `DT_FalasPaciente.csv` para `Content/Audio/Paciente` e escolha a estrutura
-   **PatientVoiceLine** como Row Type. Para atualizar depois: botão direito no DataTable > Reimport.
-3. Crie um **Sound Attenuation** (`ATT_VozPaciente`): Inner Radius ~50, Falloff ~600,
-   Spatialization = Binaural (ou o spatializer do Meta XR Audio, se o plugin for instalado).
+1. Importa os `.wav` de `output/` para `/Game/Audio/Paciente`.
+2. Importa `DT_FalasPaciente.csv` como DataTable com Row Type **PatientVoiceLine**.
+3. No `BP_Patient`: troca a malha do componente `remy` por `SK_Remy_Visemas` e adiciona o
+   componente **PatientVoice** com `Voice Lines` = `DT_FalasPaciente`.
 
-## 4. Configurar o paciente
+Pode ser rodado de novo depois de regenerar as falas: ele reimporta tudo e reaproveita o componente.
 
-No blueprint do paciente (ex.: `BP_Remy`), **Add Component > Patient Voice**:
+Sem `Attenuation` definido, o componente usa uma atenuação esférica (raio interno 150 cm,
+`Falloff Distance` 1200 cm). Para usar o spatializer do Meta XR Audio, crie um Sound Attenuation
+e coloque em `Attenuation`.
 
-- `Voice Lines`: `DT_FalasPaciente`
-- `Attenuation`: `ATT_VozPaciente`
-- `Head Bone Name`: `Head` (a voz sai desse osso)
-- `Mouth Morph Target`: vazio por enquanto (veja a seção 6)
+## 4. Ligar ao quiz (BP_Quiz)
 
-## 5. Usar nos Steps
+O nó **Patient React To Quiz Widget** lê os textos de um widget do quiz e faz o paciente dizer a
+fala cujo `disparo` bate com eles. Se ele já estiver falando, a fala entra na fila. São dois nós
+no `Content/Blueprints/Interface/BP_Quiz`:
 
-Em `BP_Dialogue_Step` (ou nos steps de cada passo):
+- No evento **OnQuizAnswerSelected**: ligue o pino `AnswerWidget` no nó (resposta do paciente à
+  alternativa escolhida).
+- No fim da função **ShowQuestion**: ligue a variável `CurrentQuestionWidget` no nó (falas que o
+  paciente diz assim que a pergunta aparece, como `P4_coleta_vacuo`).
 
-- **Speak Line** (`LineId` = `P2_nome_data`) quando o estudante escolher a opção.
-- **On Speech Started** (`LineId`, `Texto`): mostrar a legenda no balão.
-- **On Speech Finished** (`LineId`): só então liberar as próximas opções ou chamar `OnStepFinished`.
+Para tocar uma fala por outro caminho (ex.: `P0_maos_sujas` na higienização), use **Speak Line**
+com o `LineId`. **On Speech Started** (`LineId`, `Texto`) e **On Speech Finished** (`LineId`)
+servem para legenda e para liberar a próxima etapa.
 
-Sugestão de mapeamento:
+Mapeamento atual:
 
 | Momento                                    | Linha                         |
 |--------------------------------------------|-------------------------------|
@@ -74,7 +75,10 @@ Sugestão de mapeamento:
 | Consentimento / sem consentimento          | `P5_consentimento` / `P5_sem_consentimento` |
 | Refeição / repouso / medicamentos / sem verificação | `P6_ultima_refeicao` / `P6_repouso` / `P6_medicamentos` / `P6_sem_verificacao` |
 
-## 6. Lip sync
+`P0_maos_sujas` e `P5_sem_consentimento` não têm `disparo`: não há alternativa do quiz que
+corresponda a elas.
+
+## 5. Lip sync
 
 Com o Rhubarb Lip Sync em `Tools/LipSync/rhubarb` (veja `Tools/LipSync/README.md`), o gerador
 grava a coluna `Visemas` no DataTable e o componente anima os morph targets `JawOpen`,
@@ -82,6 +86,9 @@ grava a coluna `Visemas` no DataTable e o componente anima os morph targets `Jaw
 
 Sem visemas (Rhubarb ausente ou `SpeakSound` com som avulso), a boca segue o volume do áudio
 apenas com `JawOpen`. O valor `Mouth Open` (0..1) continua exposto para uso no AnimBP.
+
+Ajuste no Quest: se a boca estiver adiantada em relação à voz, aumente `Viseme Time Offset`
+(0,05 a 0,1 s); se o movimento estiver forte ou fraco demais, ajuste `Mouth Intensity`.
 
 ## Performance (Quest)
 

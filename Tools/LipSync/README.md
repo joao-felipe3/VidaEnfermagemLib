@@ -7,7 +7,8 @@ boca no próprio modelo e sincroniza com as falas geradas em `Tools/VoiceGen`.
 
 | Peça | O que faz |
 |------|-----------|
-| `criar_visemas_remy.py` | Script do Blender que adiciona 4 morph targets ao Remy |
+| `criar_visemas_remy.py` | Script do Blender que adiciona 7 morph targets ao Remy |
+| `importar_visemas_ue.py` | Reimporta o FBX no `SK_Remy_Visemas` mantendo materiais e esqueleto |
 | `rhubarb/` | Rhubarb Lip Sync 1.14.0 (MIT, offline). Não vai para o Git |
 | `Tools/VoiceGen/gerar_vozes.py` | Roda o Rhubarb em cada `.wav` e grava a coluna `Visemas` |
 | `UPatientVoiceComponent` | Converte os visemas em pesos dos morph targets durante a fala |
@@ -17,29 +18,39 @@ boca no próprio modelo e sincroniza com as falas geradas em `Tools/VoiceGen`.
 
 | Nome | Uso |
 |------|-----|
-| `JawOpen` | Abre a mandíbula: pele, lábio inferior, dentes de baixo e língua |
+| `JawOpen` | Abre a mandíbula (16°): pele, lábio inferior, dentes, gengiva de baixo e língua |
 | `MouthPucker` | Bico (O, U) |
 | `MouthWide` | Lábios esticados (I, E, S) |
 | `LowerLipIn` | Lábio inferior sob os dentes de cima (F, V) |
+| `LipsPress` | Lábios fechados e pressionados (M, B, P) |
+| `UpperLipUp` | Lábio superior sobe e mostra os dentes (S, E, F) |
+| `TongueUp` | Ponta da língua atrás dos dentes de cima (L, T, D, N) |
 
 O corte entre o lábio superior (fixo) e o inferior (acompanha o queixo) é feito pela distância
 ao longo da pele até o nariz e até o queixo, porque os lábios do Remy se sobrepõem em altura.
+Dentro da boca, cada dente é uma ilha da malha; as ilhas grandes (gengiva e céu da boca, língua,
+gengiva de baixo) são separadas pela altura do centróide.
 
 ## Formas do Rhubarb para morph targets
 
-| Forma | Som | JawOpen | MouthPucker | MouthWide | LowerLipIn |
-|-------|-----|---------|-------------|-----------|------------|
-| A | M, B, P | 0 | 0 | 0 | 0 |
-| B | K, S, T, I | 0.12 | 0 | 0.35 | 0 |
-| C | E | 0.35 | 0 | 0.25 | 0 |
-| D | A | 0.70 | 0 | 0.10 | 0 |
-| E | O | 0.30 | 0.45 | 0 | 0 |
-| F | U, W | 0.10 | 0.90 | 0 | 0 |
-| G | F, V | 0.08 | 0 | 0.10 | 0.90 |
-| H | L | 0.40 | 0 | 0.10 | 0 |
-| X | repouso | 0 | 0 | 0 | 0 |
+| Forma | Som | Jaw | Pucker | Wide | LipIn | Press | UpperUp | Tongue |
+|-------|-----|-----|--------|------|-------|-------|---------|--------|
+| A | M, B, P | 0 | 0 | 0 | 0 | 1 | 0 | 0 |
+| B | K, S, T, I | 0.10 | 0 | 0.35 | 0 | 0 | 0.45 | 0.20 |
+| C | E | 0.35 | 0 | 0.30 | 0 | 0 | 0.25 | 0 |
+| D | A | 0.75 | 0 | 0.10 | 0 | 0 | 0.10 | 0 |
+| E | O | 0.35 | 0.50 | 0 | 0 | 0 | 0 | 0 |
+| F | U, W | 0.12 | 0.95 | 0 | 0 | 0 | 0 | 0 |
+| G | F, V | 0.06 | 0 | 0.10 | 0.90 | 0 | 0.35 | 0 |
+| H | L | 0.35 | 0 | 0.10 | 0 | 0 | 0.10 | 1 |
+| X | repouso | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
-Os pesos ficam em `UPatientVoiceComponent::SetShapeTarget`.
+Os pesos ficam em `UPatientVoiceComponent::GetShapeWeights`. Durante a fala o componente ainda:
+
+- antecipa o próximo visema (`Coarticulation Time`), como a boca real faz;
+- abre mais a mandíbula nas sílabas mais fortes, pelo volume do áudio (`Envelope Influence`);
+- varia levemente a força de cada visema (`Shape Variation`), para não parecer mecânico;
+- move a mandíbula mais devagar que os lábios (`Jaw Smoothing Speed` / `Smoothing Speed`).
 
 ## Instalar o Rhubarb
 
@@ -56,8 +67,11 @@ O `gerar_vozes.py` encontra o `rhubarb.exe` automaticamente.
 "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" -b --factory-startup --python criar_visemas_remy.py -- SK_Remy.fbx SK_Remy_Visemas.fbx previews
 ```
 
-3. Importe `SK_Remy_Visemas.fbx` em `Content/RefAssets/Remy` com Skeleton = `SK_Remy_Skeleton`,
-   *Import Morph Targets* ligado e sem materiais; depois atribua os materiais do `SK_Remy`.
+3. Com o editor fechado, reimporte (mantém esqueleto, materiais e physics asset):
+
+```bash
+"C:\Program Files\Epic Games\UE_5.4\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "%cd%\MedicalGestureLib.uproject" -run=pythonscript -script="%cd%\Tools\LipSync\importar_visemas_ue.py %cd%\SK_Remy_Visemas.fbx" -unattended -nullrhi
+```
 
 Os previews (`previews/frente_*.png`, `previews/lado_*.png`) mostram cada forma para conferência.
 As coordenadas do rosto no topo do script valem para o Remy; outro modelo exige medir de novo.
@@ -71,4 +85,4 @@ As coordenadas do rosto no topo do script valem para o Remy; outro modelo exige 
    - `Mouth Intensity`: força geral da boca (comece em 1.0).
    - `Viseme Time Offset`: se no Quest a boca estiver adiantada em relação à voz, use ~0.05–0.1.
 
-Custo: 4 morph targets em um único mesh, atualizados só enquanto o paciente fala.
+Custo: 7 morph targets em um único mesh, atualizados só enquanto o paciente fala.

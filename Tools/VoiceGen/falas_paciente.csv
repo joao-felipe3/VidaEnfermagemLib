@@ -1,19 +1,19 @@
-id,passo,gatilho,texto,texto_tts
-P0_maos_sujas,0,Estudante tenta interagir antes de higienizar as mãos,"Ué, a senhora não vai lavar as mãos antes?",
-P1_acolhimento,1,"Após ""Bom dia, sou a enfermeira Simone... Como está se sentindo?""","Bom dia, enfermeira. Estou bem, só um pouco ansioso com o exame.",
-P2_nome_data,2,Correta: nome completo e data de nascimento,"Meu nome é José Carlos da Silva, nasci em 14 de março de 1978.","Meu nome é José Carlos da Silva, nasci em quatorze de março de mil novecentos e setenta e oito."
-P2_pergunta_sugestiva,2,"Errada: ""O senhor é o ...?"" (pergunta sugestiva)","Hã... sim, sim, sou eu.",
-P2_apenas_nome,2,"Parcial: ""Qual o seu nome?""",José Carlos da Silva.,
-P2_pulseira,2,Errada: apenas olhar a pulseira,"Tá aqui a pulseira, pode olhar.",
-P3_alergia_completa,3,"Correta: pergunta sobre álcool, clorexidina, iodo e látex","Que eu saiba, não tenho alergia a nenhum desses. Já usaram álcool e iodo em mim, e luva de látex também nunca me deu problema.",
-P3_alergia_generica,3,Errada: pergunta genérica sobre alergias,"Alergia... só a camarão, eu acho.",
-P3_alergia_alcool,3,"Errada: ""Vou usar álcool 70%. O Sr. tem alergia?""","Ao álcool não, não tenho não.",
-P3_procedimento_padrao,3,"Errada: ""Podemos prosseguir com o procedimento padrão?""","Pode, pode sim.",
-P4_coleta_vacuo,4,"""O Sr. já fez alguma coleta de sangue a vácuo?""","Já fiz sim, no ano passado. Mas confesso que não gosto muito de agulha.",
-P4_explicacao_ok,4,Após o estudante explicar o procedimento,"Entendi. Obrigado por explicar, fico mais tranquilo assim.",
-P5_consentimento,5,"""O Sr. autoriza que eu colete o sangue...?""","Autorizo sim, pode coletar.",
-P5_sem_consentimento,5,Errada: prosseguir sem perguntar,"Opa, calma aí. Ninguém me perguntou nada ainda.",
-P6_ultima_refeicao,6,"""Qual o horário em que o Sr. realizou a última refeição?""","Jantei ontem por volta das oito da noite. Depois disso só tomei água.",
-P6_repouso,6,"""Há quanto tempo o Sr. está sentado/em repouso?""","Cheguei faz uns quinze minutos, estou sentado desde então.",
-P6_medicamentos,6,"""O Sr. está usando medicamentos atualmente?""","Tomo um remédio para pressão de manhã, a losartana. Hoje ainda não tomei.",
-P6_sem_verificacao,6,Errada: não verificar condições pré-analíticas,"Não precisa saber se eu estou em jejum?",
+id,passo,gatilho,texto,texto_tts,disparo
+P0_maos_sujas,0,Estudante tenta interagir antes de higienizar as mãos,"Ué... a senhora não vai lavar as mãos antes, não?",,
+P1_acolhimento,1,"Após ""Bom dia, sou a enfermeira Simone... Como está se sentindo?""","Bom dia! Ah, eu tô bem, sim... só um pouquinho ansioso com o exame, sabe?",,"Bom dia, sou a enfermeira Simone, responsável por coletar sua amostra de sangue hoje. Como está se sentindo?"
+P2_nome_data,2,Correta: nome completo e data de nascimento,É José Carlos da Silva. Nasci no dia 14 de março de 2002.,É José Carlos da Silva. Nasci no dia quatorze de março... de dois mil e dois.,Qual é o seu nome completo e sua data de nascimento?
+P2_pergunta_sugestiva,2,"Errada: ""O senhor é o ...?"" (pergunta sugestiva)","Hã? Ah... é, sim, sou eu.",,O senhor é o Jello Dud?
+P2_apenas_nome,2,"Parcial: ""Qual o seu nome?""",José Carlos da Silva.,,Qual o seu nome?
+P2_pulseira,2,Errada: apenas olhar a pulseira,"Ah, tá aqui a pulseira, ó. Pode olhar.",,Olhar pulseira de identificação.
+P3_alergia_completa,3,"Correta: pergunta sobre álcool, clorexidina, iodo e látex","Olha, que eu saiba, não. Já passaram álcool e iodo em mim, e a luva de látex nunca me deu problema, não.",,"O Sr. sabe se possui alergia a alguma solução de passar na pele (álcool, clorexidina ou iodo) ou ao látex da luva?"
+P3_alergia_generica,3,Errada: pergunta genérica sobre alergias,"Alergia? Hum... só a camarão, eu acho.",,O Sr. tem alguma alergia?
+P3_alergia_alcool,3,"Errada: ""Vou usar álcool 70%. O Sr. tem alergia?""","A álcool? Não, não tenho, não.",,Vou usar álcool 70%. O Sr. tem alergia?
+P3_procedimento_padrao,3,"Errada: ""Podemos prosseguir com o procedimento padrão?""","Pode, pode sim.",,Podemos prosseguir com o procedimento padrão?
+P4_coleta_vacuo,4,"""O Sr. já fez alguma coleta de sangue a vácuo?""","Já fiz, sim. Foi no ano passado. Mas, vou ser sincero... não gosto muito de agulha, não.",,“O Sr. já fez alguma coleta de sangue a vácuo?” Como proceder após a resposta do paciente?
+P4_explicacao_ok,4,Após o estudante explicar o procedimento,"Ah, entendi. Obrigado por explicar, viu? Assim eu fico mais tranquilo.",,"Se não, explicar detalhadamente o procedimento antes de prosseguir."
+P5_consentimento,5,"""O Sr. autoriza que eu colete o sangue...?""","Autorizo, sim. Pode coletar.",,“O Sr. autoriza que eu colete o sangue necessário para os seus exames?” Como proceder após a resposta?
+P5_sem_consentimento,5,Errada: prosseguir sem perguntar,"Opa, opa, calma aí! Ninguém me perguntou nada ainda.",,
+P6_ultima_refeicao,6,"""Qual o horário em que o Sr. realizou a última refeição?""","Jantei ontem, lá pelas oito da noite. Depois disso, só tomei água.",,Qual o horário em que o Sr. realizou a última refeição?
+P6_repouso,6,"""Há quanto tempo o Sr. está sentado/em repouso?""","Ah, cheguei faz uns quinze minutinhos. Tô sentado aqui desde então.",,Há quanto tempo o Sr. está sentado/em repouso?
+P6_medicamentos,6,"""O Sr. está usando medicamentos atualmente?""","Tomo um remédio pra pressão, de manhã... a losartana. Mas hoje ainda não tomei.",,O Sr. está usando medicamentos atualmente?
+P6_sem_verificacao,6,Errada: não verificar condições pré-analíticas,"Ué... mas não precisa saber se eu tô em jejum, não?",,"Não é necessário verificar essas condições, basta coletar conforme solicitação"

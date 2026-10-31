@@ -3,11 +3,45 @@
 
 #include "PatientVoiceComponent.h"
 
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
 #include "Components/AudioComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/TextBlock.h"
 #include "GameFramework/Actor.h"
 #include "Sound/SoundAttenuation.h"
 #include "Sound/SoundBase.h"
+#include "UObject/UObjectIterator.h"
+
+namespace
+{
+	// Compara textos do quiz ignorando aspas, maiúsculas e espaços repetidos
+	FString NormalizeDialogue(const FString& Text)
+	{
+		FString Result;
+		Result.Reserve(Text.Len());
+		bool bPendingSpace = false;
+		for (TCHAR Char : Text)
+		{
+			if (Char == TEXT('"') || Char == TEXT('\'') || Char == 0x201C || Char == 0x201D)
+			{
+				continue;
+			}
+			if (FChar::IsWhitespace(Char))
+			{
+				bPendingSpace = !Result.IsEmpty();
+				continue;
+			}
+			if (bPendingSpace)
+			{
+				Result.AppendChar(TEXT(' '));
+				bPendingSpace = false;
+			}
+			Result.AppendChar(FChar::ToLower(Char));
+		}
+		return Result;
+	}
+}
 
 UPatientVoiceComponent::UPatientVoiceComponent()
 {
@@ -28,6 +62,16 @@ void UPatientVoiceComponent::BeginPlay()
 	VoiceAudio->bAutoDestroy = false;
 	VoiceAudio->bAllowSpatialization = true;
 	VoiceAudio->AttenuationSettings = Attenuation;
+	if (!Attenuation)
+	{
+		// Sem atenuação o som tocaria em 2D; usa uma esfera simples a partir da cabeça
+		VoiceAudio->bOverrideAttenuation = true;
+		VoiceAudio->AttenuationOverrides.bAttenuate = true;
+		VoiceAudio->AttenuationOverrides.bSpatialize = true;
+		VoiceAudio->AttenuationOverrides.AttenuationShape = EAttenuationShape::Sphere;
+		VoiceAudio->AttenuationOverrides.AttenuationShapeExtents = FVector(150.0f, 0.0f, 0.0f);
+		VoiceAudio->AttenuationOverrides.FalloffDistance = FalloffDistance;
+	}
 	if (PatientMesh.IsValid())
 	{
 		VoiceAudio->SetupAttachment(PatientMesh.Get(), HeadBoneName);
@@ -100,6 +144,8 @@ void UPatientVoiceComponent::StopSpeaking()
 {
 	if (VoiceAudio && VoiceAudio->IsPlaying())
 	{
+		// Stop pode disparar OnAudioFinished na hora; não deve puxar a fila
+		TGuardValue<bool> StoppingGuard(bStopping, true);
 		VoiceAudio->Stop();
 	}
 	Cues.Reset();
@@ -123,6 +169,88 @@ FText UPatientVoiceComponent::GetLineText(FName LineId) const
 	return FText::GetEmpty();
 }
 
+bool UPatientVoiceComponent::ReactToText(const FText& DialogueText)
+{
+	const FString Key = NormalizeDialogue(DialogueText.ToString());
+	if (!VoiceLines || Key.IsEmpty())
+	{
+		return false;
+	}
+
+	FName Match = NAME_None;
+	VoiceLines->ForeachRow<FPatientVoiceLine>(TEXT("PatientVoice ReactToText"), [&](const FName& RowName, const FPatientVoiceLine& Line)
+	{
+		if (Match.IsNone() && !Line.Disparo.IsEmpty() && NormalizeDialogue(Line.Disparo) == Key)
+		{
+			Match = RowName;
+		}
+	});
+
+	if (Match.IsNone())
+	{
+		return false;
+	}
+	if (IsSpeaking())
+	{
+		PendingLines.Add(Match);
+		return true;
+	}
+	return SpeakLine(Match);
+}
+
+bool UPatientVoiceComponent::ReactToQuizWidget(UWidget* QuizWidget)
+{
+	UWorld* World = QuizWidget ? QuizWidget->GetWorld() : nullptr;
+	if (!World)
+	{
+		return false;
+	}
+
+	// Textos visíveis do widget e variáveis de texto do Blueprint (ex.: AnswerText)
+	TArray<FText> Texts;
+	if (const UTextBlock* TextBlock = Cast<UTextBlock>(QuizWidget))
+	{
+		Texts.Add(TextBlock->GetText());
+	}
+	if (const UUserWidget* UserWidget = Cast<UUserWidget>(QuizWidget); UserWidget && UserWidget->WidgetTree)
+	{
+		UserWidget->WidgetTree->ForEachWidget([&Texts](UWidget* Child)
+		{
+			if (const UTextBlock* TextBlock = Cast<UTextBlock>(Child))
+			{
+				Texts.Add(TextBlock->GetText());
+			}
+		});
+	}
+	for (TFieldIterator<FProperty> It(QuizWidget->GetClass()); It; ++It)
+	{
+		if (const FTextProperty* TextProp = CastField<FTextProperty>(*It))
+		{
+			Texts.Add(TextProp->GetPropertyValue_InContainer(QuizWidget));
+		}
+		else if (const FStrProperty* StrProp = CastField<FStrProperty>(*It))
+		{
+			Texts.Add(FText::FromString(StrProp->GetPropertyValue_InContainer(QuizWidget)));
+		}
+	}
+
+	for (TObjectIterator<UPatientVoiceComponent> Voice; Voice; ++Voice)
+	{
+		if (Voice->GetWorld() != World || !Voice->HasBegunPlay())
+		{
+			continue;
+		}
+		for (const FText& Text : Texts)
+		{
+			if (Voice->ReactToText(Text))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 void UPatientVoiceComponent::ParseVisemes(const FString& Visemes)
 {
 	Cues.Reset();
@@ -136,35 +264,89 @@ void UPatientVoiceComponent::ParseVisemes(const FString& Visemes)
 		FString TimeText, ShapeText;
 		if (Entry.Split(TEXT(":"), &TimeText, &ShapeText) && !ShapeText.IsEmpty())
 		{
-			Cues.Add({ FCString::Atof(*TimeText), ShapeText[0] });
+			const float Scale = 1.0f + FMath::FRandRange(-ShapeVariation, ShapeVariation);
+			Cues.Add({ FCString::Atof(*TimeText), ShapeText[0], Scale });
 		}
 	}
 }
 
-void UPatientVoiceComponent::SetShapeTarget(TCHAR Shape)
+void UPatientVoiceComponent::GetShapeWeights(TCHAR Shape, float OutWeights[NumChannels])
 {
-	// Peso de JawOpen, MouthPucker, MouthWide e LowerLipIn para cada forma do Rhubarb:
-	// A = M/B/P, B = K/S/T/I, C = E, D = A, E = O, F = U/W, G = F/V, H = L, X = repouso
+	// Peso de JawOpen, MouthPucker, MouthWide, LowerLipIn, LipsPress, UpperLipUp e TongueUp para cada
+	// forma do Rhubarb: A = M/B/P, B = K/S/T/I, C = E, D = A, E = O, F = U/W, G = F/V, H = L, X = repouso
 	static const TMap<TCHAR, TArray<float>> Shapes = {
-		{ TEXT('A'), { 0.00f, 0.00f, 0.00f, 0.00f } },
-		{ TEXT('B'), { 0.12f, 0.00f, 0.35f, 0.00f } },
-		{ TEXT('C'), { 0.35f, 0.00f, 0.25f, 0.00f } },
-		{ TEXT('D'), { 0.70f, 0.00f, 0.10f, 0.00f } },
-		{ TEXT('E'), { 0.30f, 0.45f, 0.00f, 0.00f } },
-		{ TEXT('F'), { 0.10f, 0.90f, 0.00f, 0.00f } },
-		{ TEXT('G'), { 0.08f, 0.00f, 0.10f, 0.90f } },
-		{ TEXT('H'), { 0.40f, 0.00f, 0.10f, 0.00f } },
+		{ TEXT('A'), { 0.00f, 0.00f, 0.00f, 0.00f, 1.00f, 0.00f, 0.00f } },
+		{ TEXT('B'), { 0.10f, 0.00f, 0.35f, 0.00f, 0.00f, 0.45f, 0.20f } },
+		{ TEXT('C'), { 0.35f, 0.00f, 0.30f, 0.00f, 0.00f, 0.25f, 0.00f } },
+		{ TEXT('D'), { 0.75f, 0.00f, 0.10f, 0.00f, 0.00f, 0.10f, 0.00f } },
+		{ TEXT('E'), { 0.35f, 0.50f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
+		{ TEXT('F'), { 0.12f, 0.95f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
+		{ TEXT('G'), { 0.06f, 0.00f, 0.10f, 0.90f, 0.00f, 0.35f, 0.00f } },
+		{ TEXT('H'), { 0.35f, 0.00f, 0.10f, 0.00f, 0.00f, 0.10f, 1.00f } },
 	};
 
 	const TArray<float>* Weights = Shapes.Find(Shape);
 	for (int32 Channel = 0; Channel < NumChannels; ++Channel)
 	{
-		TargetMouth[Channel] = Weights ? (*Weights)[Channel] * MouthIntensity : 0.0f;
+		OutWeights[Channel] = Weights ? (*Weights)[Channel] : 0.0f;
+	}
+}
+
+void UPatientVoiceComponent::SetShapeTarget(TCHAR Shape)
+{
+	GetShapeWeights(Shape, TargetMouth);
+	for (float& Weight : TargetMouth)
+	{
+		Weight *= MouthIntensity;
+	}
+}
+
+void UPatientVoiceComponent::UpdateVisemeTarget()
+{
+	const float VisemeTime = SpeechTime - VisemeTimeOffset;
+	while (CueIndex + 1 < Cues.Num() && Cues[CueIndex + 1].Time <= VisemeTime)
+	{
+		++CueIndex;
+	}
+
+	const FVisemeCue& Cue = Cues[CueIndex];
+	float Weights[NumChannels];
+	GetShapeWeights(Cue.Shape, Weights);
+	for (float& Weight : Weights)
+	{
+		Weight *= Cue.Scale;
+	}
+
+	// Coarticulação: perto da troca, a boca já começa a ir para a forma seguinte
+	if (CueIndex + 1 < Cues.Num() && CoarticulationTime > 0.0f)
+	{
+		const FVisemeCue& Next = Cues[CueIndex + 1];
+		const float Remaining = Next.Time - VisemeTime;
+		if (Remaining < CoarticulationTime)
+		{
+			const float Alpha = 0.5f * (1.0f - Remaining / CoarticulationTime);
+			float NextWeights[NumChannels];
+			GetShapeWeights(Next.Shape, NextWeights);
+			for (int32 Channel = 0; Channel < NumChannels; ++Channel)
+			{
+				Weights[Channel] = FMath::Lerp(Weights[Channel], NextWeights[Channel] * Next.Scale, Alpha);
+			}
+		}
+	}
+
+	// Sílabas mais fortes abrem mais a boca
+	const float Loudness = FMath::Clamp(Envelope * EnvelopeGain, 0.0f, 1.0f);
+	Weights[Jaw] *= FMath::Lerp(1.0f - EnvelopeInfluence, 1.0f + 0.5f * EnvelopeInfluence, Loudness);
+
+	for (int32 Channel = 0; Channel < NumChannels; ++Channel)
+	{
+		TargetMouth[Channel] = FMath::Clamp(Weights[Channel], 0.0f, 1.0f) * MouthIntensity;
 	}
 }
 
 void UPatientVoiceComponent::HandleEnvelope(const USoundWave* PlayingSoundWave, const float EnvelopeValue)
 {
+	Envelope = EnvelopeValue;
 	if (Cues.Num() == 0 && IsSpeaking())
 	{
 		TargetMouth[Jaw] = FMath::Clamp(EnvelopeValue * EnvelopeGain, 0.0f, 1.0f) * MouthIntensity;
@@ -174,7 +356,7 @@ void UPatientVoiceComponent::HandleEnvelope(const USoundWave* PlayingSoundWave, 
 void UPatientVoiceComponent::HandleAudioFinished()
 {
 	// Uma fala nova já começou; o fim da anterior chegou atrasado
-	if (VoiceAudio->IsPlaying())
+	if (bStopping || VoiceAudio->IsPlaying())
 	{
 		return;
 	}
@@ -184,6 +366,13 @@ void UPatientVoiceComponent::HandleAudioFinished()
 	const FName FinishedLine = CurrentLine;
 	CurrentLine = NAME_None;
 	OnSpeechFinished.Broadcast(FinishedLine);
+
+	if (PendingLines.Num() > 0)
+	{
+		const FName NextLine = PendingLines[0];
+		PendingLines.RemoveAt(0);
+		SpeakLine(NextLine);
+	}
 }
 
 void UPatientVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -193,18 +382,14 @@ void UPatientVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	if (Cues.Num() > 0 && IsSpeaking())
 	{
 		SpeechTime += DeltaTime;
-		const float VisemeTime = SpeechTime - VisemeTimeOffset;
-		while (CueIndex + 1 < Cues.Num() && Cues[CueIndex + 1].Time <= VisemeTime)
-		{
-			++CueIndex;
-		}
-		SetShapeTarget(Cues[CueIndex].Shape);
+		UpdateVisemeTarget();
 	}
 
 	bool bMoving = IsSpeaking();
 	for (int32 Channel = 0; Channel < NumChannels; ++Channel)
 	{
-		CurrentMouth[Channel] = FMath::FInterpTo(CurrentMouth[Channel], TargetMouth[Channel], DeltaTime, SmoothingSpeed);
+		const float Speed = Channel == Jaw ? JawSmoothingSpeed : SmoothingSpeed;
+		CurrentMouth[Channel] = FMath::FInterpTo(CurrentMouth[Channel], TargetMouth[Channel], DeltaTime, Speed);
 		if (CurrentMouth[Channel] < KINDA_SMALL_NUMBER && TargetMouth[Channel] == 0.0f)
 		{
 			CurrentMouth[Channel] = 0.0f;
@@ -229,7 +414,9 @@ void UPatientVoiceComponent::ApplyMorphs()
 		return;
 	}
 
-	const FName Morphs[NumChannels] = { JawOpenMorph, MouthPuckerMorph, MouthWideMorph, LowerLipInMorph };
+	const FName Morphs[NumChannels] = {
+		JawOpenMorph, MouthPuckerMorph, MouthWideMorph, LowerLipInMorph, LipsPressMorph, UpperLipUpMorph, TongueUpMorph
+	};
 	for (int32 Channel = 0; Channel < NumChannels; ++Channel)
 	{
 		if (!Morphs[Channel].IsNone())

@@ -9,6 +9,7 @@
 
 class UAudioComponent;
 class USkeletalMeshComponent;
+class UWidget;
 class USoundAttenuation;
 class USoundBase;
 class USoundWave;
@@ -34,6 +35,10 @@ struct FPatientVoiceLine : public FTableRowBase
 	// Formas de boca do Rhubarb Lip Sync no formato "inicio:forma;..." (ex.: "0.00:X;0.06:D")
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
 	FString Visemas;
+
+	// Texto da pergunta ou da resposta do quiz que dispara esta fala (igual ao da cena)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	FString Disparo;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPatientSpeechStarted, FName, LineId, const FText&, Texto);
@@ -57,8 +62,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice")
 	bool bPreloadLines = true;
 
+	// Vazio = atenuação espacial padrão (voz audível a até FalloffDistance cm da cabeça)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|Spatial")
 	TObjectPtr<USoundAttenuation> Attenuation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|Spatial", meta = (ClampMin = "0"))
+	float FalloffDistance = 1200.0f;
 
 	// Osso/socket do paciente de onde a voz sai
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|Spatial")
@@ -77,6 +86,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync")
 	FName LowerLipInMorph = TEXT("LowerLipIn");
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync")
+	FName LipsPressMorph = TEXT("LipsPress");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync")
+	FName UpperLipUpMorph = TEXT("UpperLipUp");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync")
+	FName TongueUpMorph = TEXT("TongueUp");
+
 	// Intensidade geral da boca (1 = formas completas)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0", ClampMax = "1.5"))
 	float MouthIntensity = 1.0f;
@@ -85,12 +103,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync")
 	float VisemeTimeOffset = 0.0f;
 
-	// Multiplicador do envelope do áudio, usado quando a linha não tem visemas
+	// Multiplicador do envelope do áudio (0..1 de volume). Sem visemas, é a abertura da boca;
+	// com visemas, modula a mandíbula pelo volume
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0"))
 	float EnvelopeGain = 4.0f;
 
+	// Quanto o volume da voz abre ou fecha a mandíbula em relação ao visema (0 = nada)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0", ClampMax = "1"))
+	float EnvelopeInfluence = 0.35f;
+
+	// Antecipação do próximo visema em segundos (coarticulação: a boca já se prepara para o som seguinte)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0"))
-	float SmoothingSpeed = 20.0f;
+	float CoarticulationTime = 0.08f;
+
+	// Variação aleatória (±) da força de cada visema, para a fala não parecer mecânica
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0", ClampMax = "0.5"))
+	float ShapeVariation = 0.12f;
+
+	// Velocidade de transição dos lábios e da língua
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0"))
+	float SmoothingSpeed = 18.0f;
+
+	// Velocidade de transição da mandíbula (mais pesada, mais lenta que os lábios)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0"))
+	float JawSmoothingSpeed = 12.0f;
 
 	// Abertura da mandíbula suavizada (0..1), para ler no AnimBP
 	UPROPERTY(BlueprintReadOnly, Category = "Voice|LipSync")
@@ -119,6 +155,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Voice")
 	FText GetLineText(FName LineId) const;
 
+	// Fala a linha cuja coluna Disparo é igual ao texto; se o paciente já estiver falando, entra na fila
+	UFUNCTION(BlueprintCallable, Category = "Voice")
+	bool ReactToText(const FText& DialogueText);
+
+	// Lê os textos de um widget do quiz (pergunta ou alternativa) e faz o paciente da cena reagir.
+	// Ligue no BP_Quiz: no evento OnQuizAnswerSelected (AnswerWidget) e no fim de ShowQuestion.
+	UFUNCTION(BlueprintCallable, Category = "Voice", meta = (DisplayName = "Patient React To Quiz Widget"))
+	static bool ReactToQuizWidget(UWidget* QuizWidget);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
@@ -128,13 +173,16 @@ private:
 	{
 		float Time = 0.0f;
 		TCHAR Shape = TEXT('X');
+		float Scale = 1.0f;
 	};
 
-	enum EMouthChannel { Jaw, Pucker, Wide, LipIn, NumChannels };
+	enum EMouthChannel { Jaw, Pucker, Wide, LipIn, Press, UpperUp, TongueUp, NumChannels };
 
 	bool PlayVoice(USoundBase* Sound, FName LineId, const FString& Visemes);
 	void ParseVisemes(const FString& Visemes);
+	static void GetShapeWeights(TCHAR Shape, float OutWeights[NumChannels]);
 	void SetShapeTarget(TCHAR Shape);
+	void UpdateVisemeTarget();
 	void ApplyMorphs();
 
 	UFUNCTION()
@@ -151,9 +199,12 @@ private:
 
 	TWeakObjectPtr<USkeletalMeshComponent> PatientMesh;
 	FName CurrentLine;
+	TArray<FName> PendingLines;
+	bool bStopping = false;
 	TArray<FVisemeCue> Cues;
 	int32 CueIndex = 0;
 	float SpeechTime = 0.0f;
+	float Envelope = 0.0f;
 	float TargetMouth[NumChannels] = {};
 	float CurrentMouth[NumChannels] = {};
 };
