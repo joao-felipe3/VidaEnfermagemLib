@@ -277,14 +277,14 @@ void UPatientVoiceComponent::GetShapeWeights(TCHAR Shape, float OutWeights[NumCh
 	// Peso de JawOpen, MouthPucker, MouthWide, LowerLipIn, LipsPress, UpperLipUp e TongueUp para cada
 	// forma do Rhubarb: A = M/B/P, B = K/S/T/I, C = E, D = A, E = O, F = U/W, G = F/V, H = L, X = repouso
 	static const TMap<TCHAR, TArray<float>> Shapes = {
-		{ TEXT('A'), { 0.00f, 0.00f, 0.00f, 0.00f, 1.00f, 0.00f, 0.00f } },
-		{ TEXT('B'), { 0.10f, 0.00f, 0.35f, 0.00f, 0.00f, 0.45f, 0.20f } },
-		{ TEXT('C'), { 0.35f, 0.00f, 0.30f, 0.00f, 0.00f, 0.25f, 0.00f } },
-		{ TEXT('D'), { 0.75f, 0.00f, 0.10f, 0.00f, 0.00f, 0.10f, 0.00f } },
-		{ TEXT('E'), { 0.35f, 0.50f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
-		{ TEXT('F'), { 0.12f, 0.95f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
-		{ TEXT('G'), { 0.06f, 0.00f, 0.10f, 0.90f, 0.00f, 0.35f, 0.00f } },
-		{ TEXT('H'), { 0.35f, 0.00f, 0.10f, 0.00f, 0.00f, 0.10f, 1.00f } },
+		{ TEXT('A'), { 0.00f, 0.00f, 0.00f, 0.00f, 0.80f, 0.00f, 0.00f } },
+		{ TEXT('B'), { 0.08f, 0.00f, 0.20f, 0.00f, 0.00f, 0.20f, 0.15f } },
+		{ TEXT('C'), { 0.22f, 0.00f, 0.20f, 0.00f, 0.00f, 0.15f, 0.00f } },
+		{ TEXT('D'), { 0.42f, 0.00f, 0.08f, 0.00f, 0.00f, 0.08f, 0.00f } },
+		{ TEXT('E'), { 0.22f, 0.35f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
+		{ TEXT('F'), { 0.10f, 0.65f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
+		{ TEXT('G'), { 0.05f, 0.00f, 0.08f, 0.70f, 0.00f, 0.20f, 0.00f } },
+		{ TEXT('H'), { 0.22f, 0.00f, 0.08f, 0.00f, 0.00f, 0.08f, 0.70f } },
 	};
 
 	const TArray<float>* Weights = Shapes.Find(Shape);

@@ -86,21 +86,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face", meta = (ClampMin = "0.5"))
 	FVector2D BlinkInterval = FVector2D(2.0f, 5.0f);
 
-	// Sorriso acolhedor de repouso (o paciente é jovem, amigável e receptivo)
+	// Sorriso no repouso: 0.0 mantém a boca 100% natural, relaxada e anatômica
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face", meta = (ClampMin = "0", ClampMax = "1"))
-	float BaseSmile = 0.35f;
+	float BaseSmile = 0.0f;
 
-	// Preocupação de fundo (sobrancelhas franzidas): sutil concentração/ansiedade clínica com o procedimento
+	// Preocupação de fundo (sobrancelhas franzidas): leve concentração clínica natural
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face", meta = (ClampMin = "0", ClampMax = "1"))
-	float BaseConcern = 0.25f;
+	float BaseConcern = 0.10f;
 
-	// Sorriso caloroso quando o estudante se aproxima e cumprimenta
+	// Sorriso educado ao ser cumprimentado pelo estudante
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face", meta = (ClampMin = "0", ClampMax = "1"))
-	float GreetingSmile = 0.85f;
+	float GreetingSmile = 0.40f;
 
-	// Quanto as sobrancelhas sobem nas sílabas mais fortes da fala
+	// Elevação sutil das sobrancelhas nos picos de fala conversacional
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face", meta = (ClampMin = "0", ClampMax = "1"))
-	float SpeechBrowRaise = 0.70f;
+	float SpeechBrowRaise = 0.25f;
 
 	// Força uma expressão por alguns segundos (ex.: BrowDown 0.8 ao ver a agulha). 0..1 cada
 	UFUNCTION(BlueprintCallable, Category = "Face")

@@ -39,7 +39,7 @@ SEAM_Z = 3.357                        # linha entre os lábios
 MOUTH_CENTER = Vector((0.0, -0.245, SEAM_Z))
 MOUTH_HALF_WIDTH = 0.062              # cantos da boca
 JAW_PIVOT = Vector((0.0, -0.050, 3.420))
-JAW_ANGLE = math.radians(16.0)
+JAW_ANGLE = math.radians(8.5)
 UPPER_Z = 3.350                       # centróides acima disto ficam com o crânio (dentes, gengiva)
 TONGUE_Z = (3.350, 3.360)             # faixa do centróide da língua entre as ilhas grandes
 EYE_REGION_Z = (3.44, 3.56)           # faixa de altura dos olhos
@@ -161,8 +161,8 @@ def jaw_weight(p, side):
     w *= smoothstep(3.19, 3.25, p.z)
     w *= 1.0 - smoothstep(0.10, 0.15, ax)
     w *= 1.0 - smoothstep(-0.10, -0.02, p.y)
-    # Ancora os cantos da boca para não serem arrastados para baixo na abertura da mandíbula
-    corner_anchor = 1.0 - smoothstep(0.040, 0.068, ax) * smoothstep(3.335, 3.358, p.z)
+    # Suaviza os cantos da boca para descerem com ~35% da mandíbula de forma natural
+    corner_anchor = 1.0 - 0.65 * smoothstep(0.040, 0.070, ax) * smoothstep(3.335, 3.358, p.z)
     w *= corner_anchor
     return w
 
@@ -229,15 +229,15 @@ def build(o):
         if kind == "upper":
             return None
         if not kind and lip_weight(p) and not is_lower_lip(i):
-            return p + Vector((0.0, 0.0, 0.003 * lip_weight(p)))
+            return p + Vector((0.0, 0.0, 0.0015 * lip_weight(p)))
         w = {"lower": 1.0, "tongue": 0.75}.get(kind) if kind else jaw_weight(p, side.get(i))
         if not w:
             return None
         q = p.lerp(rot_jaw @ p, w)
         if not kind:
-            corner_fade = 1.0 - smoothstep(0.038, 0.065, abs(p.x))
+            corner_fade = 1.0 - 0.65 * smoothstep(0.038, 0.065, abs(p.x))
             lw = lip_weight(p, rx=0.07, rz=0.03) * w * corner_fade
-            q += Vector((0.0, -0.004 * lw, -0.005 * lw))
+            q += Vector((0.0, -0.0020 * lw, -0.0025 * lw))
         return q
 
     def pucker(i, p):
@@ -246,16 +246,16 @@ def build(o):
         w = lip_weight(p)
         if not w:
             return None
-        return Vector((p.x * (1.0 - 0.42 * w), p.y - 0.022 * w, p.z + (SEAM_Z - p.z) * 0.10 * w))
+        return Vector((p.x * (1.0 - 0.20 * w), p.y - 0.007 * w, p.z + (SEAM_Z - p.z) * 0.05 * w))
 
     def wide(i, p):
         if i in interior:
             return None
-        w = lip_weight(p, rx=0.085, rz=0.028)
+        w = lip_weight(p, rx=0.080, rz=0.026)
         if not w:
             return None
-        stretch = 0.012 * w * min(abs(p.x) / MOUTH_HALF_WIDTH, 1.0)
-        return Vector((p.x + math.copysign(stretch, p.x), p.y + 0.005 * w, p.z))
+        stretch = 0.0035 * w * min(abs(p.x) / MOUTH_HALF_WIDTH, 1.0)
+        return Vector((p.x + math.copysign(stretch, p.x), p.y + 0.0015 * w, p.z))
 
     def lower_lip_in(i, p):
         if i in interior or side.get(i, 0.0) < 0.5:
@@ -263,7 +263,7 @@ def build(o):
         w = lip_weight(p, rx=0.065, rz=0.026)
         if not w:
             return None
-        return Vector((p.x, p.y + 0.012 * w, p.z + 0.008 * w))
+        return Vector((p.x, p.y + 0.004 * w, p.z + 0.003 * w))
 
     def lips_press(i, p):
         if i in interior:
@@ -271,8 +271,8 @@ def build(o):
         w = lip_weight(p, rx=0.07, rz=0.026)
         if not w:
             return None
-        dz = 0.0025 * w if is_lower_lip(i) else -0.0015 * w
-        return Vector((p.x * (1.0 - 0.03 * w), p.y + 0.003 * w, p.z + dz))
+        dz = 0.0020 * w if is_lower_lip(i) else -0.0012 * w
+        return Vector((p.x * (1.0 - 0.02 * w), p.y + 0.0015 * w, p.z + dz))
 
     def upper_lip_up(i, p):
         if i in interior or is_lower_lip(i):
@@ -280,7 +280,7 @@ def build(o):
         w = lip_weight(p, rx=0.065, rz=0.03)
         if not w:
             return None
-        return Vector((p.x, p.y - 0.002 * w, p.z + 0.008 * w))
+        return Vector((p.x, p.y - 0.0008 * w, p.z + 0.0018 * w))
 
     tongue_tip_y = min((W[i].y for i, k in interior.items() if k == "tongue"), default=0.0)
 
@@ -353,7 +353,7 @@ def build(o):
         center, r, _ = min(eyes, key=lambda e: abs(e[0].x - p.x))
         return rotate_about_x(p, center, GAZE_PITCH_ANGLE)
 
-    # --- EXPRESSÕES FACIAIS VÍVIDAS E ANATÔMICAS (AMPLITUDE VR OTIMIZADA) ---
+    # --- EXPRESSÕES FACIAIS VÍVIDAS, NATURAIS E ANATÔMICAS ---
     def brow_up(i, p):
         if i in lashes or i in eyeball_verts or i in interior or i in hair or p.y > -0.10:
             return None
@@ -364,7 +364,7 @@ def build(o):
         w = w_x * w_z
         if w <= 0.001:
             return None
-        return p + Vector((0.0, 0.002 * w, 0.0165 * w))
+        return p + Vector((0.0, 0.0010 * w, 0.0075 * w))
 
     def brow_down(i, p):
         if i in lashes or i in eyeball_verts or i in interior or i in hair or p.y > -0.10:
@@ -378,9 +378,9 @@ def build(o):
         if w <= 0.001:
             return None
         inward_scale = smoothstep(0.002, 0.035, ax)
-        dx = - (p.x / max(ax, 1e-5)) * 0.011 * w * inward_scale
-        dy = -0.0035 * w
-        dz = -0.014 * w
+        dx = - (p.x / max(ax, 1e-5)) * 0.0055 * w * inward_scale
+        dy = -0.0018 * w
+        dz = -0.0065 * w
         return p + Vector((dx, dy, dz))
 
     MOUTH_CORNER_X = 0.0711
@@ -394,49 +394,42 @@ def build(o):
         ax = abs(p.x)
 
         # 1. Cantos da boca (Modiolus / Zygomaticus Major - AU12):
-        # Puxa os cantos para fora (+X), para cima (+Z) e para trás (+Y)
-        d_corner = math.sqrt(((ax - MOUTH_CORNER_X) / 0.045) ** 2 +
-                             ((p.y - MOUTH_CORNER_Y) / 0.035) ** 2 +
-                             ((p.z - MOUTH_CORNER_Z) / 0.035) ** 2)
+        # Elevação sutil e suave dos cantos da boca (5.5mm Z, 3.5mm X, 2.0mm Y)
+        d_corner = math.sqrt(((ax - MOUTH_CORNER_X) / 0.038) ** 2 +
+                             ((p.y - MOUTH_CORNER_Y) / 0.030) ** 2 +
+                             ((p.z - MOUTH_CORNER_Z) / 0.030) ** 2)
         w_corner = 1.0 - smoothstep(0.0, 1.0, d_corner) if p.y < -0.18 else 0.0
 
-        # 2. Curvatura expressiva de todo o lábio (Smile Arc):
-        # O arco do sorriso curva os lábios superior e inferior para cima em formato de 'U'
-        w_lip = lip_weight(p, rx=0.080, rz=0.032)
+        # 2. Curvatura suave e anatômica dos cantos dos lábios:
+        # O centro dos lábios (filtro e meio da boca) NÃO É TOCADO, preservando 100% o repouso.
+        w_lip = lip_weight(p, rx=0.076, rz=0.026)
         u_lip = min(ax / MOUTH_CORNER_X, 1.0)  # 0 no centro, 1 nos cantos
+        center_mask = smoothstep(0.25, 0.70, u_lip)  # 0 no centro, 1 nas laterais
 
-        is_lower = is_lower_lip(i)
-        base_lift = 0.0030 if is_lower else 0.0050
-        corner_lift = 0.0150
-        lip_lift_z = (base_lift + corner_lift * (u_lip ** 1.35)) * w_lip
+        lip_lift_z = 0.0035 * (u_lip ** 1.8) * w_lip * center_mask
+        lip_width_x = math.copysign(0.0020 * u_lip * w_lip * center_mask, p.x)
+        lip_depth_y = 0.0010 * w_lip * center_mask
 
-        # Abertura suave dos lábios no sorriso para conferir calor e naturalidade
-        lip_part_z = (0.0025 if not is_lower else -0.0015) * w_lip * (1.0 - smoothstep(0.02, 0.055, ax))
-
-        # Alargamento dos lábios (+X) e recuo (+Y):
-        lip_width_x = math.copysign(0.012 * (u_lip ** 1.2) * w_lip, p.x)
-        lip_depth_y = (0.005 + 0.004 * u_lip) * w_lip
-
-        # 3. Bochechas e maçãs do rosto (Zygomaticus minor / Cheek Raiser - AU6):
+        # 3. Maçãs do rosto (elevação sutil de 3.0mm Z):
         cheek_pos = Vector((math.copysign(0.065, p.x), -0.210, 3.425))
         d_cheek = (p - cheek_pos).length
-        w_cheek = 1.0 - smoothstep(0.0, 0.065, d_cheek) if p.y < -0.17 else 0.0
+        w_cheek = 1.0 - smoothstep(0.0, 0.050, d_cheek) if p.y < -0.17 else 0.0
 
-        # 4. Ruguinhas/contração palpebral inferior de Duchenne:
+        # 4. Ruguinhas/contração palpebral inferior muito suave (1.0mm Z):
         w_eye_squint = 0.0
         center, r, _ = min(eyes, key=lambda e: abs(e[0].x - p.x))
         dx = p.x - center.x
         dz = p.z - center.z
-        if abs(dx) < 1.05 * r and -0.70 * r <= dz < 0.10 * r and p.y < -0.17:
-            u = dx / (1.05 * r)
-            w_eye_squint = (math.cos(min(abs(u), 1.0) * math.pi * 0.5) ** 1.3) * (1.0 - smoothstep(0.10 * r, 0.65 * r, -dz))
+        if abs(dx) < 1.0 * r and -0.65 * r <= dz < 0.05 * r and p.y < -0.17:
+            u = dx / (1.0 * r)
+            w_eye_squint = (math.cos(min(abs(u), 1.0) * math.pi * 0.5) ** 1.3) * (1.0 - smoothstep(0.10 * r, 0.60 * r, -dz))
 
-        if not (w_corner or w_lip or w_cheek or w_eye_squint):
+        if not (w_corner or (w_lip * center_mask) or w_cheek or w_eye_squint):
             return None
 
-        disp_x = lip_width_x + math.copysign(0.012 * w_corner + 0.004 * w_cheek, p.x)
-        disp_y = lip_depth_y + 0.008 * w_corner - 0.007 * w_cheek - 0.004 * w_eye_squint
-        disp_z = lip_lift_z + lip_part_z + 0.018 * w_corner + 0.014 * w_cheek + 0.005 * w_eye_squint
+        disp_x = lip_width_x + math.copysign(0.0025 * w_corner + 0.0010 * w_cheek, p.x)
+        disp_y = lip_depth_y + 0.0015 * w_corner - 0.0015 * w_cheek - 0.0008 * w_eye_squint
+        disp_z = lip_lift_z + 0.0040 * w_corner + 0.0030 * w_cheek + 0.0010 * w_eye_squint
         return p + Vector((disp_x, disp_y, disp_z))
 
     def squint(i, p):
@@ -451,7 +444,7 @@ def build(o):
             w_z = 1.0 - smoothstep(0.10 * r, 0.65 * r, -dz)
             w = w_x * w_z
             if w > 0.001:
-                return p + Vector((0.0, -0.003 * w, 0.0075 * w))
+                return p + Vector((0.0, -0.0015 * w, 0.0035 * w))
         return None
 
     add_key("JawOpen", jaw)

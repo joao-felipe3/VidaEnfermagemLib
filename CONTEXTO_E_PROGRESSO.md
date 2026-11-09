@@ -82,19 +82,19 @@ No início do ciclo de trabalho atual, após estudo do material e do TCC desenvo
   * *Amplitudes Anatômicas Refinadas (Blender 5.1)*:
     * `BrowUp`: Elevação expressiva expandida (+16.5mm) para ser claramente legível através da franja do cabelo de Remy.
     * `BrowDown`: Franzimento corrugador expandido (-14mm Z, -11mm medial) para conferir dramaticidade e tensão clínica realista.
-* **Aperfeiçoamento da Região da Boca e Sorriso Anatômico (Smile Arc & Desacoplamento da Mandíbula)**:
-  * *Diagnóstico do Sorriso Ausente*:
-    * No modelo 3D anterior, o centro dos cantos da boca estava calibrado incorretamente em $Y=-0.235$ (enquanto os cantos reais de Remy estão em $Y=-0.210$), fazendo com que a influência `w_corner` atingisse apenas 7% dos vértices do modíolo.
-    * O centro dos lábios tinha deslocamento praticamente nulo (0.09mm), mantendo a boca numa linha reta horizontal fechada.
-    * Na fala, a rotação da mandíbula (`JawOpen`) puxava os cantos da boca para baixo em até 15mm, suprimindo o sorriso durante a pronúncia de vogais.
-    * No código C++, o sorriso de repouso (`BaseSmile`) estava travado em 0.18, e a saudação inicial (`GreetingSmile`) durava apenas 2.4s e zerava permanentemente.
-  * *Solução Escultural e Geométrica (Blender 5.1)*:
-    * `Smile Arc`: Curvatura contínua ao longo de toda a extensão dos lábios superior e inferior (`lip_lift_z = (base_lift + corner_lift * u^1.35) * w_lip`), elevando o centro em 4.5mm e os cantos em até 18mm com leve separação labial acolhedora.
-    * Ancoragem dos Cantos na Mandíbula: Em `jaw_weight`, foi aplicada ancoragem geométrica (`corner_anchor`) para que a abertura da boca abaixe a língua, dentes e queixo sem arrastar os cantos dos lábios para o pescoço. Assim, quando Remy fala sorrindo, os cantos permanecem elevados (sorriso falado natural).
-  * *Controle Dinâmico C++ (`UPatientLookAtComponent`)*:
-    * Criação da propriedade `BaseSmile = 0.35f` editável no Blueprint/Inspector, garantindo um sorriso jovem e receptivo mesmo em repouso.
-    * Extensão da saudação (`GreetingSmile = 0.85f`), sustentando o sorriso caloroso nos primeiros segundos de abordagem antes de transicionar suavemente para o repouso.
-    * Relaxamento orgânico do corrugador (`SmileConcernRelief = 0.40 * WantedSmile`), impedindo que sobrancelhas franzidas neutralizem a expressão acolhedora.
+* **Calibração Natural da Boca, Repouso Anatômico e Sincronia Labial Humana**:
+  * *Eliminação do Efeito "Uncanny / Caricato"*:
+    * No repouso, a boca agora permanece **100% selada, relaxada e anatômica** (`BaseSmile = 0.0f`), eliminando a fresta com dentes visíveis e a tensão horizontal de sorriso forçado. O centro dos lábios (filtro e arco do cupido) é preservado integralmente sem distorções.
+    * O sorriso de saudação (`GreetingSmile = 0.40f`) atua nos cantos da boca com elevação sutil (4.0mm Z, 2.5mm X) e maçãs do rosto (3.0mm Z), transmitindo acolhimento humano educado por 2 segundos antes de retornar ao repouso sereno.
+  * *Refinamento dos Visemas e Lip Sync no Rhubarb*:
+    * Rotação da mandíbula (`JAW_ANGLE`) reduzida de 16° para **8.5°**, correspondendo à abertura vertical real de fala conversacional calma.
+    * `UpperLipUp`: Reduzido de 8mm para 1.8mm, impedindo que o lábio superior suba como um esgar/rosnado de coelho ao pronunciar "S", "T", "I".
+    * `MouthWide`: Reduzido de 12mm para 3.5mm max, evitando o estiramento horizontal excessivo da boca na fala.
+    * `MouthPucker`: Reduzido de 22mm para 7mm de projeção frontal, conferindo arredondamento suave e natural para as vogais "O" e "U".
+    * `JawOpen` nos fonemas do Rhubarb reajustado para proporções realistas (Vogal "A" de 0.75 para 0.42; "E" de 0.35 para 0.22; "O" de 0.35 para 0.22).
+    * `corner_anchor`: Os cantos da boca acompanham a mandíbula com ~35% de flexibilidade, garantindo uma abertura oval suave sem bocarra trapezoidal deformada.
+  * *Prosódia e Sobrancelhas Naturais*:
+    * Elevação das sobrancelhas (`BrowUp`) reduzida de 16.5mm para 7.5mm anatômicos, com acentuação conversacional limitada a 0.30 max em C++, eliminando o olhar de susto ou arregalado.
   * *Micro-movimentos Orgânicos em Repouso / Escuta*:
     * Micro-respiração facial contínua ($\pm 0.03$ bochechas, $\pm 0.04$ sobrancelhas) sincronizada com o ciclo respiratório torácico.
     * Ondas cognitivas e de atenção a cada 3–5 segundos (`ThoughtWave`), variando levemente a postura das sobrancelhas e o olhar, eliminando o aspecto de estátua ou manequim quando em silêncio.
