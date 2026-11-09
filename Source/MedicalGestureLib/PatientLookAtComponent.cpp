@@ -139,42 +139,60 @@ void UPatientLookAtComponent::UpdateFace(float DeltaTime, bool bSpeaking, float 
 
 	// Ciclo de respiração e micro-movimentos orgânicos (o paciente está vivo e respira o tempo todo)
 	const float BreathCycle = FMath::Sin(Now * 1.5f);
-	const float BreathMicroSmile = 0.03f * BreathCycle;
-	const float BreathMicroConcern = 0.04f * FMath::Sin(Now * 1.5f + 0.8f);
+	const float BreathMicroSmile = 0.04f * BreathCycle;
+	const float BreathMicroConcern = 0.03f * FMath::Sin(Now * 1.5f + 0.8f);
 
 	// Variações de atenção e pensamento a cada 3 a 5 segundos (elimina o efeito de manequim no repouso)
 	const float ThoughtWave = FMath::Sin(Now * 0.43f) * FMath::Cos(Now * 0.27f + 1.2f);
 	const float IdleAttentiveLift = FMath::Clamp(ThoughtWave * 0.18f, 0.0f, 0.25f);
-	const float IdleConcernShift = ThoughtWave * 0.12f;
+	const float IdleConcernShift = ThoughtWave * 0.08f;
+	const float IdleSmileShift = ThoughtWave * 0.08f;
 
-	// Saudação inicial ao ser abordado
+	// Saudação inicial ao ser abordado:
+	// - Sobe nos primeiros 0.8s, mantém sustentado até 2.5s, e transiciona suavemente para o BaseSmile em 4.5s
+	float Greeting = 0.0f;
 	if (GreetTime >= 0.0f)
 	{
 		GreetTime += DeltaTime;
+		if (GreetTime < 0.8f)
+		{
+			Greeting = GreetTime / 0.8f;
+		}
+		else if (GreetTime < 2.5f)
+		{
+			Greeting = 1.0f;
+		}
+		else if (GreetTime < 4.5f)
+		{
+			Greeting = 1.0f - (GreetTime - 2.5f) / 2.0f;
+		}
+		else
+		{
+			Greeting = 0.0f;
+		}
 	}
-	const float Greeting = GreetTime >= 0.0f ? FMath::Clamp(1.0f - FMath::Abs(GreetTime - 1.2f) / 1.2f, 0.0f, 1.0f) : 0.0f;
-	const float GreetDecay = GreetTime >= 0.0f ? FMath::Clamp(1.0f - GreetTime / 3.0f, 0.0f, 1.0f) : 0.0f;
 
 	// 1. SORRISO E BOCHECHAS (Smile / CheekRaiser):
-	// - Estado normal: repouso acolhedor e vivo (0.18) com micro-respiração e pico ao cumprimentar (0.65)
-	// - Falando: bochechas sobem e flexionam dinamicamente acompanhando a fala (+0.30*Speech + 0.15*SpeechPeak)
-	const float BaseSmile = Engagement * 0.18f + BreathMicroSmile + GreetingSmile * Greeting;
-	const float SpeechSmileFlex = 0.30f * Speech + 0.15f * SpeechPeak;
-	float WantedSmile = FMath::Clamp(BaseSmile + SpeechActivity * SpeechSmileFlex, 0.0f, 1.0f);
+	// - Estado normal: repouso acolhedor e vivo (BaseSmile) com micro-respiração e pico caloroso de saudação (GreetingSmile)
+	// - Falando: o sorriso conversacional se mantém elevado e modula com a energia vocal (+0.25*Speech + 0.15*SpeechPeak)
+	const float RestSmile = Engagement * (BaseSmile + IdleSmileShift) + BreathMicroSmile + GreetingSmile * Greeting;
+	const float SpeechSmileMod = 0.25f * Speech + 0.15f * SpeechPeak;
+	float WantedSmile = FMath::Clamp(RestSmile + SpeechActivity * SpeechSmileMod, 0.0f, 1.0f);
 
 	// 2. SOBRANCELHAS ERGUIDAS (BrowUp):
-	// - Estado normal: leve elevação atenta que varia com o fluxo de pensamentos (0..0.25) e saudação
-	// - Falando: postura conversacional ativa (0.35) que acentua nos picos da voz (+SpeechBrowRaise * SpeechPeak)
-	const float IdleBrowUp = FMath::Max(IdleAttentiveLift, 0.45f * Greeting);
+	// - Estado normal: leve elevação atenta que varia com o fluxo de pensamentos e saudação
+	// - Falando: postura conversacional ativa que acentua nos picos da voz
+	const float IdleBrowUp = FMath::Max(IdleAttentiveLift, 0.50f * Greeting);
 	const float SpeechBrowUp = 0.35f * SpeechActivity + (SpeechBrowRaise * 0.8f) * SpeechPeak + 0.10f * FMath::Sin(Now * 3.5f) * Speech;
 	float WantedBrowUp = FMath::Clamp(FMath::Max(IdleBrowUp, SpeechBrowUp), 0.0f, 1.0f);
 
 	// 3. PREOCUPAÇÃO / CONCENTRAÇÃO (BrowDown):
 	// - Estado normal: preocupação médica de fundo com micro-variações orgânicas
-	// - Falando: o corrugador relaxa ligeiramente nos picos de BrowUp para dar expressividade elástica
+	// - Ao sorrir ou cumprimentar: o músculo corrugador relaxa organicamente (antagonismo com o zigomático)
 	const float BaseConcernAdjusted = BaseConcern + BreathMicroConcern + IdleConcernShift;
-	const float SpeakingConcernRelief = 0.25f * SpeechPeak;
-	float WantedBrowDown = FMath::Clamp((BaseConcernAdjusted - SpeakingConcernRelief) * (1.0f - 0.4f * GreetDecay), 0.10f, 0.90f);
+	const float SpeakingConcernRelief = 0.20f * SpeechPeak;
+	const float SmileConcernRelief = 0.40f * WantedSmile;
+	float WantedBrowDown = FMath::Clamp((BaseConcernAdjusted - SpeakingConcernRelief - SmileConcernRelief) * (1.0f - 0.6f * Greeting), 0.0f, 0.85f);
 
 	if (ExpressionTime > 0.0f)
 	{

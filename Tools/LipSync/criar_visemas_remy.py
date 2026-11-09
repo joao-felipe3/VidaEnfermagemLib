@@ -161,6 +161,9 @@ def jaw_weight(p, side):
     w *= smoothstep(3.19, 3.25, p.z)
     w *= 1.0 - smoothstep(0.10, 0.15, ax)
     w *= 1.0 - smoothstep(-0.10, -0.02, p.y)
+    # Ancora os cantos da boca para não serem arrastados para baixo na abertura da mandíbula
+    corner_anchor = 1.0 - smoothstep(0.040, 0.068, ax) * smoothstep(3.335, 3.358, p.z)
+    w *= corner_anchor
     return w
 
 
@@ -232,7 +235,8 @@ def build(o):
             return None
         q = p.lerp(rot_jaw @ p, w)
         if not kind:
-            lw = lip_weight(p, rx=0.07, rz=0.03) * w
+            corner_fade = 1.0 - smoothstep(0.038, 0.065, abs(p.x))
+            lw = lip_weight(p, rx=0.07, rz=0.03) * w * corner_fade
             q += Vector((0.0, -0.004 * lw, -0.005 * lw))
         return q
 
@@ -379,31 +383,60 @@ def build(o):
         dz = -0.014 * w
         return p + Vector((dx, dy, dz))
 
+    MOUTH_CORNER_X = 0.0711
+    MOUTH_CORNER_Y = -0.2099
+    MOUTH_CORNER_Z = 3.3583
+
     def smile(i, p):
         if i in interior or i in lashes or i in eyeball_verts or i in hair or p.y > -0.10:
             return None
-        corner_x = math.copysign(MOUTH_HALF_WIDTH, p.x)
-        d_corner = math.sqrt(((p.x - corner_x)/0.048)**2 + ((p.y - (-0.235))/0.038)**2 + ((p.z - SEAM_Z)/0.038)**2)
-        w_corner = 1.0 - smoothstep(0.0, 1.0, d_corner) if p.y < -0.20 else 0.0
 
+        ax = abs(p.x)
+
+        # 1. Cantos da boca (Modiolus / Zygomaticus Major - AU12):
+        # Puxa os cantos para fora (+X), para cima (+Z) e para trás (+Y)
+        d_corner = math.sqrt(((ax - MOUTH_CORNER_X) / 0.045) ** 2 +
+                             ((p.y - MOUTH_CORNER_Y) / 0.035) ** 2 +
+                             ((p.z - MOUTH_CORNER_Z) / 0.035) ** 2)
+        w_corner = 1.0 - smoothstep(0.0, 1.0, d_corner) if p.y < -0.18 else 0.0
+
+        # 2. Curvatura expressiva de todo o lábio (Smile Arc):
+        # O arco do sorriso curva os lábios superior e inferior para cima em formato de 'U'
+        w_lip = lip_weight(p, rx=0.080, rz=0.032)
+        u_lip = min(ax / MOUTH_CORNER_X, 1.0)  # 0 no centro, 1 nos cantos
+
+        is_lower = is_lower_lip(i)
+        base_lift = 0.0030 if is_lower else 0.0050
+        corner_lift = 0.0150
+        lip_lift_z = (base_lift + corner_lift * (u_lip ** 1.35)) * w_lip
+
+        # Abertura suave dos lábios no sorriso para conferir calor e naturalidade
+        lip_part_z = (0.0025 if not is_lower else -0.0015) * w_lip * (1.0 - smoothstep(0.02, 0.055, ax))
+
+        # Alargamento dos lábios (+X) e recuo (+Y):
+        lip_width_x = math.copysign(0.012 * (u_lip ** 1.2) * w_lip, p.x)
+        lip_depth_y = (0.005 + 0.004 * u_lip) * w_lip
+
+        # 3. Bochechas e maçãs do rosto (Zygomaticus minor / Cheek Raiser - AU6):
         cheek_pos = Vector((math.copysign(0.065, p.x), -0.210, 3.425))
         d_cheek = (p - cheek_pos).length
-        w_cheek = 1.0 - smoothstep(0.0, 0.060, d_cheek) if p.y < -0.18 else 0.0
+        w_cheek = 1.0 - smoothstep(0.0, 0.065, d_cheek) if p.y < -0.17 else 0.0
 
+        # 4. Ruguinhas/contração palpebral inferior de Duchenne:
         w_eye_squint = 0.0
         center, r, _ = min(eyes, key=lambda e: abs(e[0].x - p.x))
         dx = p.x - center.x
         dz = p.z - center.z
-        if abs(dx) < 1.05 * r and -0.65 * r <= dz < -0.10 * r and p.y < -0.18:
+        if abs(dx) < 1.05 * r and -0.70 * r <= dz < 0.10 * r and p.y < -0.17:
             u = dx / (1.05 * r)
-            w_eye_squint = (math.cos(abs(u) * math.pi * 0.5) ** 1.3) * (1.0 - smoothstep(0.15 * r, 0.55 * r, -dz))
+            w_eye_squint = (math.cos(min(abs(u), 1.0) * math.pi * 0.5) ** 1.3) * (1.0 - smoothstep(0.10 * r, 0.65 * r, -dz))
 
-        if not (w_corner or w_cheek or w_eye_squint):
+        if not (w_corner or w_lip or w_cheek or w_eye_squint):
             return None
 
-        disp_x = math.copysign(0.008 * w_corner + 0.004 * w_cheek, p.x)
-        disp_y = 0.005 * w_corner - 0.005 * w_cheek - 0.003 * w_eye_squint
-        disp_z = 0.013 * w_corner + 0.011 * w_cheek + 0.004 * w_eye_squint
+        disp_x = lip_width_x + math.copysign(0.012 * w_corner + 0.004 * w_cheek, p.x)
+        disp_y = lip_depth_y + 0.008 * w_corner - 0.007 * w_cheek - 0.004 * w_eye_squint
+        disp_z = lip_lift_z + lip_part_z + 0.018 * w_corner + 0.014 * w_cheek + 0.005 * w_eye_squint
         return p + Vector((disp_x, disp_y, disp_z))
 
     def squint(i, p):

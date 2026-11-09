@@ -86,13 +86,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face", meta = (ClampMin = "0.5"))
 	FVector2D BlinkInterval = FVector2D(2.0f, 5.0f);
 
-	// Preocupação de fundo (sobrancelhas franzidas): o paciente está ansioso com o exame/procedimento
+	// Sorriso acolhedor de repouso (o paciente é jovem, amigável e receptivo)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face", meta = (ClampMin = "0", ClampMax = "1"))
-	float BaseConcern = 0.45f;
+	float BaseSmile = 0.35f;
 
-	// Sorriso natural quando o estudante se aproxima
+	// Preocupação de fundo (sobrancelhas franzidas): sutil concentração/ansiedade clínica com o procedimento
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face", meta = (ClampMin = "0", ClampMax = "1"))
-	float GreetingSmile = 0.65f;
+	float BaseConcern = 0.25f;
+
+	// Sorriso caloroso quando o estudante se aproxima e cumprimenta
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face", meta = (ClampMin = "0", ClampMax = "1"))
+	float GreetingSmile = 0.85f;
 
 	// Quanto as sobrancelhas sobem nas sílabas mais fortes da fala
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face", meta = (ClampMin = "0", ClampMax = "1"))

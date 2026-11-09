@@ -82,8 +82,19 @@ No início do ciclo de trabalho atual, após estudo do material e do TCC desenvo
   * *Amplitudes Anatômicas Refinadas (Blender 5.1)*:
     * `BrowUp`: Elevação expressiva expandida (+16.5mm) para ser claramente legível através da franja do cabelo de Remy.
     * `BrowDown`: Franzimento corrugador expandido (-14mm Z, -11mm medial) para conferir dramaticidade e tensão clínica realista.
-    * `Smile`: Projeção zigomática ampliada (+11mm Z, +13mm lateral) destacando as maçãs do rosto.
-    * `Squint`: Elevação palpebral inferior ampliada (+7.5mm) nos sorrisos de Duchenne e foco.
+* **Aperfeiçoamento da Região da Boca e Sorriso Anatômico (Smile Arc & Desacoplamento da Mandíbula)**:
+  * *Diagnóstico do Sorriso Ausente*:
+    * No modelo 3D anterior, o centro dos cantos da boca estava calibrado incorretamente em $Y=-0.235$ (enquanto os cantos reais de Remy estão em $Y=-0.210$), fazendo com que a influência `w_corner` atingisse apenas 7% dos vértices do modíolo.
+    * O centro dos lábios tinha deslocamento praticamente nulo (0.09mm), mantendo a boca numa linha reta horizontal fechada.
+    * Na fala, a rotação da mandíbula (`JawOpen`) puxava os cantos da boca para baixo em até 15mm, suprimindo o sorriso durante a pronúncia de vogais.
+    * No código C++, o sorriso de repouso (`BaseSmile`) estava travado em 0.18, e a saudação inicial (`GreetingSmile`) durava apenas 2.4s e zerava permanentemente.
+  * *Solução Escultural e Geométrica (Blender 5.1)*:
+    * `Smile Arc`: Curvatura contínua ao longo de toda a extensão dos lábios superior e inferior (`lip_lift_z = (base_lift + corner_lift * u^1.35) * w_lip`), elevando o centro em 4.5mm e os cantos em até 18mm com leve separação labial acolhedora.
+    * Ancoragem dos Cantos na Mandíbula: Em `jaw_weight`, foi aplicada ancoragem geométrica (`corner_anchor`) para que a abertura da boca abaixe a língua, dentes e queixo sem arrastar os cantos dos lábios para o pescoço. Assim, quando Remy fala sorrindo, os cantos permanecem elevados (sorriso falado natural).
+  * *Controle Dinâmico C++ (`UPatientLookAtComponent`)*:
+    * Criação da propriedade `BaseSmile = 0.35f` editável no Blueprint/Inspector, garantindo um sorriso jovem e receptivo mesmo em repouso.
+    * Extensão da saudação (`GreetingSmile = 0.85f`), sustentando o sorriso caloroso nos primeiros segundos de abordagem antes de transicionar suavemente para o repouso.
+    * Relaxamento orgânico do corrugador (`SmileConcernRelief = 0.40 * WantedSmile`), impedindo que sobrancelhas franzidas neutralizem a expressão acolhedora.
   * *Micro-movimentos Orgânicos em Repouso / Escuta*:
     * Micro-respiração facial contínua ($\pm 0.03$ bochechas, $\pm 0.04$ sobrancelhas) sincronizada com o ciclo respiratório torácico.
     * Ondas cognitivas e de atenção a cada 3–5 segundos (`ThoughtWave`), variando levemente a postura das sobrancelhas e o olhar, eliminando o aspecto de estátua ou manequim quando em silêncio.
