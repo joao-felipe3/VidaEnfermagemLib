@@ -277,14 +277,14 @@ void UPatientVoiceComponent::GetShapeWeights(TCHAR Shape, float OutWeights[NumCh
 	// Peso de JawOpen, MouthPucker, MouthWide, LowerLipIn, LipsPress, UpperLipUp e TongueUp para cada
 	// forma do Rhubarb: A = M/B/P, B = K/S/T/I, C = E, D = A, E = O, F = U/W, G = F/V, H = L, X = repouso
 	static const TMap<TCHAR, TArray<float>> Shapes = {
-		{ TEXT('A'), { 0.00f, 0.00f, 0.00f, 0.00f, 0.80f, 0.00f, 0.00f } },
-		{ TEXT('B'), { 0.08f, 0.00f, 0.20f, 0.00f, 0.00f, 0.20f, 0.15f } },
-		{ TEXT('C'), { 0.22f, 0.00f, 0.20f, 0.00f, 0.00f, 0.15f, 0.00f } },
-		{ TEXT('D'), { 0.42f, 0.00f, 0.08f, 0.00f, 0.00f, 0.08f, 0.00f } },
-		{ TEXT('E'), { 0.22f, 0.35f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
-		{ TEXT('F'), { 0.10f, 0.65f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
-		{ TEXT('G'), { 0.05f, 0.00f, 0.08f, 0.70f, 0.00f, 0.20f, 0.00f } },
-		{ TEXT('H'), { 0.22f, 0.00f, 0.08f, 0.00f, 0.00f, 0.08f, 0.70f } },
+		{ TEXT('A'), { 0.00f, 0.00f, 0.00f, 0.00f, 0.75f, 0.00f, 0.00f } },
+		{ TEXT('B'), { 0.18f, 0.00f, 0.18f, 0.00f, 0.00f, 0.08f, 0.12f } },
+		{ TEXT('C'), { 0.50f, 0.00f, 0.18f, 0.00f, 0.00f, 0.06f, 0.00f } },
+		{ TEXT('D'), { 0.85f, 0.00f, 0.06f, 0.00f, 0.00f, 0.06f, 0.00f } },
+		{ TEXT('E'), { 0.50f, 0.40f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
+		{ TEXT('F'), { 0.22f, 0.70f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
+		{ TEXT('G'), { 0.14f, 0.00f, 0.06f, 0.70f, 0.00f, 0.10f, 0.00f } },
+		{ TEXT('H'), { 0.50f, 0.00f, 0.06f, 0.00f, 0.00f, 0.06f, 0.65f } },
 	};
 
 	const TArray<float>* Weights = Shapes.Find(Shape);
@@ -297,6 +297,7 @@ void UPatientVoiceComponent::GetShapeWeights(TCHAR Shape, float OutWeights[NumCh
 void UPatientVoiceComponent::SetShapeTarget(TCHAR Shape)
 {
 	GetShapeWeights(Shape, TargetMouth);
+	TargetMouth[Jaw] *= JawScale;
 	for (float& Weight : TargetMouth)
 	{
 		Weight *= MouthIntensity;
@@ -336,9 +337,9 @@ void UPatientVoiceComponent::UpdateVisemeTarget()
 		}
 	}
 
-	// Sílabas mais fortes abrem mais a boca
+	// Sílabas mais fortes abrem mais a boca sem abafar a forma fonética
 	const float Loudness = FMath::Clamp(Envelope * EnvelopeGain, 0.0f, 1.0f);
-	Weights[Jaw] *= FMath::Lerp(1.0f - EnvelopeInfluence, 1.0f + 0.5f * EnvelopeInfluence, Loudness);
+	Weights[Jaw] *= FMath::Lerp(0.85f, 1.25f, Loudness) * JawScale;
 
 	for (int32 Channel = 0; Channel < NumChannels; ++Channel)
 	{
@@ -351,7 +352,7 @@ void UPatientVoiceComponent::HandleEnvelope(const USoundWave* PlayingSoundWave, 
 	Envelope = EnvelopeValue;
 	if (Cues.Num() == 0 && IsSpeaking())
 	{
-		TargetMouth[Jaw] = FMath::Clamp(EnvelopeValue * EnvelopeGain, 0.0f, 1.0f) * MouthIntensity;
+		TargetMouth[Jaw] = FMath::Clamp(EnvelopeValue * EnvelopeGain * JawScale, 0.0f, 1.0f) * MouthIntensity;
 	}
 }
 

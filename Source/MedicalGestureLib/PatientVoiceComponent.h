@@ -124,9 +124,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0"))
 	float SmoothingSpeed = 18.0f;
 
-	// Velocidade de transição da mandíbula (mais pesada, mais lenta que os lábios)
+	// Velocidade de transição da mandíbula (mais ágil para acompanhar o ritmo das sílabas)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0"))
-	float JawSmoothingSpeed = 12.0f;
+	float JawSmoothingSpeed = 16.0f;
+
+	// Multiplicador da abertura da mandíbula (permite ajuste fino no Details da Unreal em tempo real)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice|LipSync", meta = (ClampMin = "0", ClampMax = "2.5"))
+	float JawScale = 1.0f;
 
 	// Abertura da mandíbula suavizada (0..1), para ler no AnimBP
 	UPROPERTY(BlueprintReadOnly, Category = "Voice|LipSync")

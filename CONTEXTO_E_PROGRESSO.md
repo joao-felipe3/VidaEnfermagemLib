@@ -86,13 +86,15 @@ No início do ciclo de trabalho atual, após estudo do material e do TCC desenvo
   * *Eliminação do Efeito "Uncanny / Caricato"*:
     * No repouso, a boca agora permanece **100% selada, relaxada e anatômica** (`BaseSmile = 0.0f`), eliminando a fresta com dentes visíveis e a tensão horizontal de sorriso forçado. O centro dos lábios (filtro e arco do cupido) é preservado integralmente sem distorções.
     * O sorriso de saudação (`GreetingSmile = 0.40f`) atua nos cantos da boca com elevação sutil (4.0mm Z, 2.5mm X) e maçãs do rosto (3.0mm Z), transmitindo acolhimento humano educado por 2 segundos antes de retornar ao repouso sereno.
-  * *Refinamento dos Visemas e Lip Sync no Rhubarb*:
-    * Rotação da mandíbula (`JAW_ANGLE`) reduzida de 16° para **8.5°**, correspondendo à abertura vertical real de fala conversacional calma.
-    * `UpperLipUp`: Reduzido de 8mm para 1.8mm, impedindo que o lábio superior suba como um esgar/rosnado de coelho ao pronunciar "S", "T", "I".
-    * `MouthWide`: Reduzido de 12mm para 3.5mm max, evitando o estiramento horizontal excessivo da boca na fala.
-    * `MouthPucker`: Reduzido de 22mm para 7mm de projeção frontal, conferindo arredondamento suave e natural para as vogais "O" e "U".
-    * `JawOpen` nos fonemas do Rhubarb reajustado para proporções realistas (Vogal "A" de 0.75 para 0.42; "E" de 0.35 para 0.22; "O" de 0.35 para 0.22).
-    * `corner_anchor`: Os cantos da boca acompanham a mandíbula com ~35% de flexibilidade, garantindo uma abertura oval suave sem bocarra trapezoidal deformada.
+  * *Refinamento dos Visemas e Lip Sync no Rhubarb (Abertura Labial Balanceada)*:
+    * Rotação da mandíbula (`JAW_ANGLE`): Calibrada em **12.0°** no Blender 5.1 (arco ideal para visualização nítida em VR sem aspecto de bocejo forçado).
+    * `corner_anchor`: Os cantos da boca acompanham a mandíbula com ~45% de conformidade elástica, conferindo um formato oval orgânico e abertura limpa da cavidade oral durante a fala.
+    * `UpperLipUp`: Mantido contido em 1.8mm max, impedindo que o lábio superior suba como um esgar ao pronunciar consoantes dentais/fricativas.
+    * `MouthWide`: Mantido contido em 4.0mm max, evitando o estiramento horizontal exagerado.
+    * `JawOpen` nos fonemas do Rhubarb calibrado para abertura clara e articulada das sílabas (Vogal "A" com 0.85; "E" e "O" com 0.50; consoantes de apoio entre 0.14 e 0.18; repouso "A/MBP" selado em 0.00).
+    * Modulação de volume aprimorada (`Lerp(0.85f, 1.25f, Loudness)`), garantindo que sílabas de volume moderado nunca sejam abafadas e retenham ao menos 85% da abertura fonética real.
+    * Adicionada a propriedade `JawScale` (default 1.0, editável de 0.0 a 2.5 no painel *Details* da Unreal Engine) para permitir sintonia fina da abertura labial em tempo real sem necessidade de recompilar.
+    * Agilidade da mandíbula aumentada (`JawSmoothingSpeed = 16.0f`), garantindo que palavras curtas e sílabas rápidas abram e fechem com nitidez temporal.
   * *Prosódia e Sobrancelhas Naturais*:
     * Elevação das sobrancelhas (`BrowUp`) reduzida de 16.5mm para 7.5mm anatômicos, com acentuação conversacional limitada a 0.30 max em C++, eliminando o olhar de susto ou arregalado.
   * *Micro-movimentos Orgânicos em Repouso / Escuta*:

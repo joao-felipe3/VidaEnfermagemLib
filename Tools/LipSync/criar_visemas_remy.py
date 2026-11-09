@@ -39,7 +39,7 @@ SEAM_Z = 3.357                        # linha entre os lábios
 MOUTH_CENTER = Vector((0.0, -0.245, SEAM_Z))
 MOUTH_HALF_WIDTH = 0.062              # cantos da boca
 JAW_PIVOT = Vector((0.0, -0.050, 3.420))
-JAW_ANGLE = math.radians(8.5)
+JAW_ANGLE = math.radians(12.0)
 UPPER_Z = 3.350                       # centróides acima disto ficam com o crânio (dentes, gengiva)
 TONGUE_Z = (3.350, 3.360)             # faixa do centróide da língua entre as ilhas grandes
 EYE_REGION_Z = (3.44, 3.56)           # faixa de altura dos olhos
@@ -161,8 +161,8 @@ def jaw_weight(p, side):
     w *= smoothstep(3.19, 3.25, p.z)
     w *= 1.0 - smoothstep(0.10, 0.15, ax)
     w *= 1.0 - smoothstep(-0.10, -0.02, p.y)
-    # Suaviza os cantos da boca para descerem com ~35% da mandíbula de forma natural
-    corner_anchor = 1.0 - 0.65 * smoothstep(0.040, 0.070, ax) * smoothstep(3.335, 3.358, p.z)
+    # Suaviza os cantos da boca para descerem com ~45% da mandíbula de forma natural
+    corner_anchor = 1.0 - 0.55 * smoothstep(0.040, 0.075, ax) * smoothstep(3.330, 3.360, p.z)
     w *= corner_anchor
     return w
 
@@ -235,9 +235,9 @@ def build(o):
             return None
         q = p.lerp(rot_jaw @ p, w)
         if not kind:
-            corner_fade = 1.0 - 0.65 * smoothstep(0.038, 0.065, abs(p.x))
+            corner_fade = 1.0 - 0.50 * smoothstep(0.038, 0.065, abs(p.x))
             lw = lip_weight(p, rx=0.07, rz=0.03) * w * corner_fade
-            q += Vector((0.0, -0.0020 * lw, -0.0025 * lw))
+            q += Vector((0.0, -0.0030 * lw, -0.0040 * lw))
         return q
 
     def pucker(i, p):
