@@ -96,6 +96,7 @@ Tools/VoiceGen/models/
 Tools/VoiceGen/output/
 Tools/LipSync/rhubarb/
 Tools/LipSync/previews/
+Tools/LipSync/investigacao/
 Tools/VoiceGen/amostras/
 __pycache__/
 *.pyc

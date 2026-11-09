@@ -16,10 +16,18 @@ namespace
 	const FName LeftEyeBone = TEXT("LeftEye");
 	const FName RightEyeBone = TEXT("RightEye");
 
-	// Giro em espaço do componente: guinada no eixo vertical e inclinação no eixo lateral do rosto
+	// Giro simples (Yaw e Pitch)
 	FQuat LookDelta(float YawDeg, float PitchDeg, const FVector& Right)
 	{
 		return FQuat(FVector::UpVector, FMath::DegreesToRadians(YawDeg)) * FQuat(Right, FMath::DegreesToRadians(PitchDeg));
+	}
+
+	// Giro completo 3-DOF com rolagem frontal (Head tilt natural para escuta e conversação)
+	FQuat LookDelta(float YawDeg, float PitchDeg, float RollDeg, const FVector& Forward, const FVector& Right)
+	{
+		return FQuat(FVector::UpVector, FMath::DegreesToRadians(YawDeg))
+			* FQuat(Right, FMath::DegreesToRadians(PitchDeg))
+			* FQuat(Forward, FMath::DegreesToRadians(RollDeg));
 	}
 }
 
@@ -58,11 +66,36 @@ void FPatientAnimInstanceProxy::Update(float DeltaSeconds)
 		PoseTime = Length > 0.0f ? FMath::Fmod(PoseTime + DeltaSeconds, Length) : 0.0f;
 	}
 
-	// Pequenos desvios do olhar a cada 1-3 s, como os olhos fazem ao conversar
+	// Triângulo do olhar social (alternância foveal natural entre olho esquerdo, olho direito e boca do aluno)
 	if (LifeTime >= NextSaccade)
 	{
-		Saccade = FVector2D(Random.FRandRange(-3.0f, 3.0f), Random.FRandRange(-2.0f, 2.0f));
-		NextSaccade = LifeTime + Random.FRandRange(1.0f, 3.0f);
+		static int32 SaccadeTargetIndex = 0;
+		SaccadeTargetIndex = (SaccadeTargetIndex + 1) % 4;
+
+		switch (SaccadeTargetIndex)
+		{
+		case 0:
+			// Olho esquerdo do aluno
+			Saccade = FVector2D(-1.6f + Random.FRandRange(-0.3f, 0.3f), 0.4f + Random.FRandRange(-0.2f, 0.2f));
+			NextSaccade = LifeTime + Random.FRandRange(1.8f, 3.0f);
+			break;
+		case 1:
+			// Olho direito do aluno
+			Saccade = FVector2D(1.6f + Random.FRandRange(-0.3f, 0.3f), 0.4f + Random.FRandRange(-0.2f, 0.2f));
+			NextSaccade = LifeTime + Random.FRandRange(1.8f, 3.0f);
+			break;
+		case 2:
+			// Boca / comissura do aluno (leitura labial inconsciente de escuta)
+			Saccade = FVector2D(Random.FRandRange(-0.5f, 0.5f), -1.2f + Random.FRandRange(-0.3f, 0.3f));
+			NextSaccade = LifeTime + Random.FRandRange(1.0f, 2.0f);
+			break;
+		case 3:
+		default:
+			// Micro-desvio reflexivo de pensamento
+			Saccade = FVector2D(Random.FRandRange(-2.4f, 2.4f), Random.FRandRange(0.2f, 1.0f));
+			NextSaccade = LifeTime + Random.FRandRange(0.7f, 1.4f);
+			break;
+		}
 	}
 }
 
@@ -157,18 +190,25 @@ void FPatientAnimInstanceProxy::ApplyLook(FPoseContext& Output)
 	EyeYaw = FMath::FInterpTo(EyeYaw, WantedEyeYaw, DeltaTime, 18.0f);
 	EyePitch = FMath::FInterpTo(EyePitch, WantedEyePitch, DeltaTime, 18.0f);
 
-	// Vida: balanço leve o tempo todo e acenos curtos acompanhando a fala
-	const float IdleYaw = 1.5f * FMath::Sin(LifeTime * 0.37f) + 0.8f * FMath::Sin(LifeTime * 0.91f);
-	const float IdlePitch = 1.0f * FMath::Sin(LifeTime * 0.53f);
-	const float TalkPitch = -3.0f * Speech + 1.0f * Speech * FMath::Sin(LifeTime * 5.3f);
-	const float TalkYaw = 1.5f * Speech * FMath::Sin(LifeTime * 1.7f);
+	// Vida: balanço leve o tempo todo, acenos curtos acompanhando a fala e inclinação lateral (head tilt)
+	const float IdleYaw = 1.3f * FMath::Sin(LifeTime * 0.37f) + 0.6f * FMath::Sin(LifeTime * 0.89f);
+	const float IdlePitch = 0.8f * FMath::Sin(LifeTime * 0.53f);
+	const float IdleRoll = 1.2f * FMath::Sin(LifeTime * 0.29f + 0.5f);
+
+	// Gesticulação conversacional ativa:
+	// - Aceno suave de cabeça (nod afirmativo e ênfase silábica)
+	const float TalkPitch = -2.4f * Speech + 1.0f * Speech * FMath::Sin(LifeTime * 4.6f);
+	const float TalkYaw = 1.2f * Speech * FMath::Sin(LifeTime * 1.5f);
+	// - Inclinação lateral de escuta/atenção (head tilt típico de jovem de 24 anos ao conversar)
+	const float TalkRoll = 1.6f * Speech * FMath::Sin(LifeTime * 1.1f + 0.8f);
+
 	const float TotalYaw = HeadYaw + IdleYaw + TalkYaw;
 	const float TotalPitch = HeadPitch + IdlePitch + TalkPitch;
+	const float TotalRoll = IdleRoll + TalkRoll;
 
-	// 40% do giro no pescoço e 60% na cabeça. Cada giro é em espaço do componente, convertido para o
-	// espaço local do osso: Local' = Pai'^-1 * Giro * Pai' * Local
-	const FQuat NeckDelta = LookDelta(TotalYaw * 0.4f, TotalPitch * 0.4f, Right);
-	const FQuat HeadDelta = LookDelta(TotalYaw * 0.6f, TotalPitch * 0.6f, Right);
+	// 40% do giro no pescoço e 60% na cabeça
+	const FQuat NeckDelta = LookDelta(TotalYaw * 0.4f, TotalPitch * 0.4f, TotalRoll * 0.4f, Forward, Right);
+	const FQuat HeadDelta = LookDelta(TotalYaw * 0.6f, TotalPitch * 0.6f, TotalRoll * 0.6f, Forward, Right);
 
 	FTransform& NeckLocal = Output.Pose[Neck];
 	NeckLocal.SetRotation((NeckParentRot.Inverse() * NeckDelta * NeckParentRot * NeckLocal.GetRotation()).GetNormalized());

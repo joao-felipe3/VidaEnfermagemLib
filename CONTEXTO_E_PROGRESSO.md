@@ -113,6 +113,19 @@ No início do ciclo de trabalho atual, após estudo do material e do TCC desenvo
 * **Seguidor de Envelope de Áudio Ativo**:
   * Configuração de `EnvelopeFollowerAttackTime = 20` e `EnvelopeFollowerReleaseTime = 100` no `UPatientVoiceComponent`, garantindo modulação realista da mandíbula em função da energia sonora.
 
+### ✅ 3.8. Auditoria Investigativa Biométrica FACS e Humanização Avançada do Remy
+* **Estudo Investigativo Multi-Ângulo (Blender 5.1 & Render Headless)**:
+  * Desenvolvimento de script automatizado (`investigar_remy.py`) gerando **80 capturas em alta resolução (800x800)** através de 5 câmeras clínicas (`aluno_vr`, `retrato_frontal`, `macro_olhos`, `macro_boca`, `perfil_clinico`) cobrindo 16 estados conversacionais, fonéticos e emocionais.
+  * Mapeamento métrico tridimensional dos 16 morph targets pelo padrão internacional FACS (*Facial Action Coding System*), mensurando amplitudes milimétricas reais de deslocamento ($\Delta X, \Delta Y, \Delta Z$).
+* **Erradicação dos 5 Fatores do Vale da Estranheza (*Uncanny Valley*)**:
+  1. *Grau de Liberdade de Inclinação Lateral da Cabeça (Head Roll / 3-DOF)*: Implementação de rotação com componente de inclinação natural ao falar ($1.6^\circ$) e em repouso ($1.2^\circ$), distribuído entre pescoço (40%) e cabeça (60%) em `PatientAnimInstance.cpp`.
+  2. *Micro-Assimetria Facial Orgânica*: Eliminação da simetria bilateral artificial do 3D através de variação de ~4% nas sobrancelhas (`BrowUp`) e nos cantos labiais (`Smile`).
+  3. *Triângulo do Olhar Social de Argyle-Cook*: Substituição de ruído aleatório nas sacadas por ciclo de fixação foveal humana em 4 fases: olho esquerdo do aluno (1.8s–3.0s) $\to$ olho direito (1.8s–3.0s) $\to$ comissura da boca (1.0s–2.0s) $\to$ micro-desvio de pensamento (0.7s–1.4s).
+  4. *Ativação do Músculo Mentoniano (AU 17 - Chin Raiser)*: Modelagem da contração cutânea do queixo (+1.2mm) durante o selamento labial oclusivo (`LipsPress` para 'M', 'B', 'P').
+  5. *Coarticulação Sigmoidal Suave*: Aplicação de interpolação não-linear `FMath::SmoothStep` no `PatientVoiceComponent.cpp`, eliminando estalos visuais entre fonemas adjacentes.
+* **Documentação Científica e Visual**:
+  * Publicação do dossiê investigativo detalhado com carrosséis e medições milimétricas em `DOSSIE_INVESTIGATIVO_EXPRESSOES_PACIENTE.md`.
+
 ---
 
 ## 4. 🧭 Planejamento e Próximos Passos

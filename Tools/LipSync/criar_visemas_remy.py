@@ -269,10 +269,14 @@ def build(o):
         if i in interior:
             return None
         w = lip_weight(p, rx=0.07, rz=0.026)
-        if not w:
+        # Músculo Mentalis (AU17): elevação sutil do queixo ao comprimir os lábios
+        chin_w = 0.0
+        if p.z < 3.32 and p.y < -0.21 and abs(p.x) < 0.045:
+            chin_w = smoothstep(3.22, 3.29, p.z) * (1.0 - smoothstep(0.02, 0.045, abs(p.x)))
+        if not w and not chin_w:
             return None
-        dz = 0.0020 * w if is_lower_lip(i) else -0.0012 * w
-        return Vector((p.x * (1.0 - 0.02 * w), p.y + 0.0015 * w, p.z + dz))
+        dz = (0.0020 * w if is_lower_lip(i) else -0.0012 * w) + 0.0012 * chin_w
+        return Vector((p.x * (1.0 - 0.02 * w), p.y + 0.0015 * w + 0.0006 * chin_w, p.z + dz))
 
     def upper_lip_up(i, p):
         if i in interior or is_lower_lip(i):
@@ -364,7 +368,9 @@ def build(o):
         w = w_x * w_z
         if w <= 0.001:
             return None
-        return p + Vector((0.0, 0.0015 * w, 0.0120 * w))
+        # Micro-assimetria orgânica natural: a sobrancelha esquerda eleva-se ~4% a mais, eliminando o aspecto de espelho sintético
+        asym = 1.04 if p.x > 0 else 0.96
+        return p + Vector((0.0, 0.0015 * w * asym, 0.0120 * w * asym))
 
     def brow_down(i, p):
         if i in lashes or i in eyeball_verts or i in interior or i in hair or p.y > -0.10:
@@ -427,9 +433,11 @@ def build(o):
         if not (w_corner or (w_lip * center_mask) or w_cheek or w_eye_squint):
             return None
 
-        disp_x = lip_width_x + math.copysign(0.0025 * w_corner + 0.0010 * w_cheek, p.x)
-        disp_y = lip_depth_y + 0.0015 * w_corner - 0.0015 * w_cheek - 0.0008 * w_eye_squint
-        disp_z = lip_lift_z + 0.0040 * w_corner + 0.0030 * w_cheek + 0.0010 * w_eye_squint
+        # Micro-assimetria orgânica no sorriso comunicativo (~4% de nuance entre os lados)
+        asym_corner = 1.04 if p.x > 0 else 0.96
+        disp_x = lip_width_x + math.copysign((0.0025 * w_corner + 0.0010 * w_cheek) * asym_corner, p.x)
+        disp_y = lip_depth_y + 0.0015 * w_corner * asym_corner - 0.0015 * w_cheek - 0.0008 * w_eye_squint
+        disp_z = lip_lift_z + (0.0040 * w_corner * asym_corner) + 0.0030 * w_cheek + 0.0010 * w_eye_squint
         return p + Vector((disp_x, disp_y, disp_z))
 
     def squint(i, p):

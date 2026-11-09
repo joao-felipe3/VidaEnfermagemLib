@@ -320,19 +320,20 @@ void UPatientVoiceComponent::UpdateVisemeTarget()
 		Weight *= Cue.Scale;
 	}
 
-	// Coarticulação: perto da troca, a boca já começa a ir para a forma seguinte
+	// Coarticulação: transição sigmoidal suave (SmoothStep) entre fonemas consecutivos
 	if (CueIndex + 1 < Cues.Num() && CoarticulationTime > 0.0f)
 	{
 		const FVisemeCue& Next = Cues[CueIndex + 1];
 		const float Remaining = Next.Time - VisemeTime;
 		if (Remaining < CoarticulationTime)
 		{
-			const float Alpha = 0.5f * (1.0f - Remaining / CoarticulationTime);
+			const float LinearAlpha = 1.0f - Remaining / CoarticulationTime;
+			const float SmoothAlpha = 0.5f * FMath::SmoothStep(0.0f, 1.0f, LinearAlpha);
 			float NextWeights[NumChannels];
 			GetShapeWeights(Next.Shape, NextWeights);
 			for (int32 Channel = 0; Channel < NumChannels; ++Channel)
 			{
-				Weights[Channel] = FMath::Lerp(Weights[Channel], NextWeights[Channel] * Next.Scale, Alpha);
+				Weights[Channel] = FMath::Lerp(Weights[Channel], NextWeights[Channel] * Next.Scale, SmoothAlpha);
 			}
 		}
 	}
