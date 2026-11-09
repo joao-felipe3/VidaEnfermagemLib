@@ -364,7 +364,7 @@ def build(o):
         w = w_x * w_z
         if w <= 0.001:
             return None
-        return p + Vector((0.0, 0.0010 * w, 0.0075 * w))
+        return p + Vector((0.0, 0.0015 * w, 0.0120 * w))
 
     def brow_down(i, p):
         if i in lashes or i in eyeball_verts or i in interior or i in hair or p.y > -0.10:
@@ -378,9 +378,9 @@ def build(o):
         if w <= 0.001:
             return None
         inward_scale = smoothstep(0.002, 0.035, ax)
-        dx = - (p.x / max(ax, 1e-5)) * 0.0055 * w * inward_scale
-        dy = -0.0018 * w
-        dz = -0.0065 * w
+        dx = - (p.x / max(ax, 1e-5)) * 0.0085 * w * inward_scale
+        dy = -0.0025 * w
+        dz = -0.0100 * w
         return p + Vector((dx, dy, dz))
 
     MOUTH_CORNER_X = 0.0711
@@ -444,7 +444,7 @@ def build(o):
             w_z = 1.0 - smoothstep(0.10 * r, 0.65 * r, -dz)
             w = w_x * w_z
             if w > 0.001:
-                return p + Vector((0.0, -0.0015 * w, 0.0035 * w))
+                return p + Vector((0.0, -0.0025 * w, 0.0060 * w))
         return None
 
     add_key("JawOpen", jaw)

@@ -95,8 +95,11 @@ No início do ciclo de trabalho atual, após estudo do material e do TCC desenvo
     * Modulação de volume aprimorada (`Lerp(0.85f, 1.25f, Loudness)`), garantindo que sílabas de volume moderado nunca sejam abafadas e retenham ao menos 85% da abertura fonética real.
     * Adicionada a propriedade `JawScale` (default 1.0, editável de 0.0 a 2.5 no painel *Details* da Unreal Engine) para permitir sintonia fina da abertura labial em tempo real sem necessidade de recompilar.
     * Agilidade da mandíbula aumentada (`JawSmoothingSpeed = 16.0f`), garantindo que palavras curtas e sílabas rápidas abram e fechem com nitidez temporal.
-  * *Prosódia e Sobrancelhas Naturais*:
-    * Elevação das sobrancelhas (`BrowUp`) reduzida de 16.5mm para 7.5mm anatômicos, com acentuação conversacional limitada a 0.30 max em C++, eliminando o olhar de susto ou arregalado.
+  * *Expressividade e Olhar Vivo dos Olhos (Restauração do Ponto de Equilíbrio)*:
+    * Elevação das sobrancelhas (`BrowUp`): Calibrada em **12.0mm** no Blender 5.1 (visível com clareza através da franja do cabelo, sem subir para a raiz). Teto conversacional em C++ expandido para **0.65 max** com acentuação por prosódia (`0.20 * SpeechActivity + SpeechBrowRaise * SpeechPeak`).
+    * Franzimento / Concentração (`BrowDown`): Calibrado em **10.0mm**, transmitindo foco clínico acolhedor e atencioso ao escutar o aluno.
+    * Contração palpebral e sorriso nos olhos (`Squint`): Calibrado em **6.0mm** no 3D e até **0.85 max** em C++, reativando o *Duchenne smile* (olhos que sorriem e se iluminam com a fala e acolhimento).
+    * Micro-movimentos de atenção (`ThoughtWave`): Ondulação atenta contínua (0.15 lift) ao escutar em repouso, eliminando a rigidez estática.
   * *Micro-movimentos Orgânicos em Repouso / Escuta*:
     * Micro-respiração facial contínua ($\pm 0.03$ bochechas, $\pm 0.04$ sobrancelhas) sincronizada com o ciclo respiratório torácico.
     * Ondas cognitivas e de atenção a cada 3–5 segundos (`ThoughtWave`), variando levemente a postura das sobrancelhas e o olhar, eliminando o aspecto de estátua ou manequim quando em silêncio.
