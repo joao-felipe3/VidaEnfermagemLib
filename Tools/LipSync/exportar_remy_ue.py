@@ -23,3 +23,4 @@ task.options.set_editor_property("export_morph_targets", False)
 
 unreal.Exporter.run_asset_export_task(task)
 print(f"EXPORTADO COM SUCESSO: {OUT_PATH} (Tamanho: {os.path.getsize(OUT_PATH)} bytes)")
+

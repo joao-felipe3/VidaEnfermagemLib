@@ -130,19 +130,52 @@ void UPatientLookAtComponent::UpdateFace(float DeltaTime, bool bSpeaking, float 
 	}
 	BlinkWeight = FMath::SmoothStep(0.0f, 1.0f, BlinkWeight);
 
-	// Sobrancelhas sobem nos picos da fala, que decaem devagar como num gesto de ênfase
-	SpeechPeak = FMath::Max(SpeechPeak - DeltaTime * 1.5f, bSpeaking ? FMath::Clamp((Speech - 0.25f) * 2.5f, 0.0f, 1.0f) : 0.0f);
+	// Atividade de fala: transição suave entre estado de escuta e modo de conversação ativa
+	SpeechActivity = FMath::FInterpTo(SpeechActivity, bSpeaking ? 1.0f : 0.0f, DeltaTime, 4.0f);
 
-	// Ao ser abordado: sorriso e sobrancelhas erguidas de saudação, depois transiciona para atenção/preocupação clínica
+	// Picos de ênfase na fala (prosódia) baseados na abertura da boca / energia sonora
+	const float SpeechInput = bSpeaking ? FMath::Clamp(Speech * 1.6f, 0.0f, 1.0f) : 0.0f;
+	SpeechPeak = FMath::Max(SpeechPeak - DeltaTime * 2.2f, SpeechInput);
+
+	// Ciclo de respiração e micro-movimentos orgânicos (o paciente está vivo e respira o tempo todo)
+	const float BreathCycle = FMath::Sin(Now * 1.5f);
+	const float BreathMicroSmile = 0.03f * BreathCycle;
+	const float BreathMicroConcern = 0.04f * FMath::Sin(Now * 1.5f + 0.8f);
+
+	// Variações de atenção e pensamento a cada 3 a 5 segundos (elimina o efeito de manequim no repouso)
+	const float ThoughtWave = FMath::Sin(Now * 0.43f) * FMath::Cos(Now * 0.27f + 1.2f);
+	const float IdleAttentiveLift = FMath::Clamp(ThoughtWave * 0.18f, 0.0f, 0.25f);
+	const float IdleConcernShift = ThoughtWave * 0.12f;
+
+	// Saudação inicial ao ser abordado
 	if (GreetTime >= 0.0f)
 	{
 		GreetTime += DeltaTime;
 	}
 	const float Greeting = GreetTime >= 0.0f ? FMath::Clamp(1.0f - FMath::Abs(GreetTime - 1.2f) / 1.2f, 0.0f, 1.0f) : 0.0f;
+	const float GreetDecay = GreetTime >= 0.0f ? FMath::Clamp(1.0f - GreetTime / 3.0f, 0.0f, 1.0f) : 0.0f;
 
-	float WantedSmile = GreetingSmile * Greeting;
-	float WantedBrowUp = FMath::Max(SpeechBrowRaise * SpeechPeak, 0.45f * Greeting);
-	float WantedBrowDown = BaseConcern * (1.0f - 0.5f * Greeting);
+	// 1. SORRISO E BOCHECHAS (Smile / CheekRaiser):
+	// - Estado normal: repouso acolhedor e vivo (0.18) com micro-respiração e pico ao cumprimentar (0.65)
+	// - Falando: bochechas sobem e flexionam dinamicamente acompanhando a fala (+0.30*Speech + 0.15*SpeechPeak)
+	const float BaseSmile = Engagement * 0.18f + BreathMicroSmile + GreetingSmile * Greeting;
+	const float SpeechSmileFlex = 0.30f * Speech + 0.15f * SpeechPeak;
+	float WantedSmile = FMath::Clamp(BaseSmile + SpeechActivity * SpeechSmileFlex, 0.0f, 1.0f);
+
+	// 2. SOBRANCELHAS ERGUIDAS (BrowUp):
+	// - Estado normal: leve elevação atenta que varia com o fluxo de pensamentos (0..0.25) e saudação
+	// - Falando: postura conversacional ativa (0.35) que acentua nos picos da voz (+SpeechBrowRaise * SpeechPeak)
+	const float IdleBrowUp = FMath::Max(IdleAttentiveLift, 0.45f * Greeting);
+	const float SpeechBrowUp = 0.35f * SpeechActivity + (SpeechBrowRaise * 0.8f) * SpeechPeak + 0.10f * FMath::Sin(Now * 3.5f) * Speech;
+	float WantedBrowUp = FMath::Clamp(FMath::Max(IdleBrowUp, SpeechBrowUp), 0.0f, 1.0f);
+
+	// 3. PREOCUPAÇÃO / CONCENTRAÇÃO (BrowDown):
+	// - Estado normal: preocupação médica de fundo com micro-variações orgânicas
+	// - Falando: o corrugador relaxa ligeiramente nos picos de BrowUp para dar expressividade elástica
+	const float BaseConcernAdjusted = BaseConcern + BreathMicroConcern + IdleConcernShift;
+	const float SpeakingConcernRelief = 0.25f * SpeechPeak;
+	float WantedBrowDown = FMath::Clamp((BaseConcernAdjusted - SpeakingConcernRelief) * (1.0f - 0.4f * GreetDecay), 0.10f, 0.90f);
+
 	if (ExpressionTime > 0.0f)
 	{
 		ExpressionTime -= DeltaTime;
@@ -150,12 +183,15 @@ void UPatientLookAtComponent::UpdateFace(float DeltaTime, bool bSpeaking, float 
 		WantedBrowUp = ForcedExpression.Y;
 		WantedBrowDown = ForcedExpression.Z;
 	}
-	Smile = FMath::FInterpTo(Smile, WantedSmile, DeltaTime, 4.0f);
-	BrowUp = FMath::FInterpTo(BrowUp, WantedBrowUp, DeltaTime, 8.0f);
-	BrowDown = FMath::FInterpTo(BrowDown, WantedBrowDown, DeltaTime, 3.0f);
 
-	const float WantedSquint = FMath::Clamp(Smile * 0.25f + BrowDown * 0.35f, 0.0f, 1.0f);
-	Squint = FMath::FInterpTo(Squint, WantedSquint, DeltaTime, 4.0f);
+	Smile = FMath::FInterpTo(Smile, WantedSmile, DeltaTime, 5.0f);
+	BrowUp = FMath::FInterpTo(BrowUp, WantedBrowUp, DeltaTime, 8.0f);
+	BrowDown = FMath::FInterpTo(BrowDown, WantedBrowDown, DeltaTime, 4.0f);
+
+	// 4. CONTRAÇÃO OCULAR / SQUINT:
+	// - Sorriso Duchenne nos cantos dos olhos + foco nos picos de fala
+	const float WantedSquint = FMath::Clamp(Smile * 0.25f + BrowDown * 0.30f + 0.20f * SpeechPeak, 0.0f, 0.75f);
+	Squint = FMath::FInterpTo(Squint, WantedSquint, DeltaTime, 5.0f);
 
 	const TPair<FName, float> Morphs[] = {
 		{ BlinkMorph, BlinkWeight },

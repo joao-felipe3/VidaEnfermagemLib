@@ -70,7 +70,7 @@ No início do ciclo de trabalho atual, após estudo do material e do TCC desenvo
   * `importar_na_unreal.bat`: Importação direta de áudios, DataTable e configuração do `BP_Patient` via linha de comando (`configurar_paciente_ue.py`).
   * `ouvir_amostras.bat`: Painel comparativo interativo em HTML (`amostras.html`) para validação auditiva.
 
-### ✅ 3.7. Humanização Visual: Expressividade Facial, Piscada Anatômica, Olhar Vivo e Respiração
+### ✅ 3.7. Humanização Visual: Expressividade Facial, Piscada Anatômica, Olhar Vivo, Respiração e Prosódia de Fala
 * **Diagnóstico e Correção da Piscada (`Blink`)**:
   * *Problema anterior*: A rotação linear dos vértices arrastava os cantos dos olhos (canthi medial e lateral) para dentro da maxila, causando a impressão de uma "pele esticada não-natural" caindo sobre a face.
   * *Solução matemática*: Ancoragem dos ligamentos cantais (movimento zero nas extremidades) com perfil senoidal/parabólico (`math.cos(u * pi * 0.5) ** 1.3`), preservando a calota esférica do globo ocular e sincronizando o rim dos cílios superiores para selar perfeitamente contra a pálpebra inferior sem deformações.
@@ -78,12 +78,20 @@ No início do ciclo de trabalho atual, após estudo do material e do TCC desenvo
   * *Problema anterior*: O rig do Mixamo não possui `LeftEye`/`RightEye` bones; o código C++ não conseguia girar os olhos, deixando os alunos com a sensação de um boneco estático com olhar congelado para a frente.
   * *Solução*: Criação de 4 novos morph targets esféricos (`EyeLookLeft`, `EyeLookRight`, `EyeLookUp`, `EyeLookDown`) no Blender 5.1 que rotacionam as ilhas dos globos oculares em seus centros ópticos.
   * *Integração C++*: `PatientAnimInstance` computa micro-sacadas oculares e rotação até o jogador, passando os valores normalizados para `PatientLookAtComponent`, que aciona os morphs dos olhos imediatamente antes da cabeça virar.
-* **Expressões Faciais Vívidas em Escala de VR**:
-  * Reformulação completa das amplitudes de expressão no Blender e C++ para legibilidade a 1,5–2 metros de distância no Meta Quest:
-    * `Smile`: Cantos da boca elevados (+10mm), bochechas projetadas (+8mm Z, -4mm Y) e contração palpebral inferior Duchenne.
-    * `BrowDown`: Franzimento do músculo corrugador (-8mm para a linha média, -10mm Z) com transição contínua sem descontinuidades no centro da glabela.
-    * `BrowUp`: Elevação expressiva do arco superciliar e testa (+12.5mm Z) sincronizada com os picos da fala e saudações.
-    * `Squint`: Contração palpebral para desconforto, dor ou foco.
+* **Refino de Expressões Faciais Vívidas (Escultura Anatômica e Prosódia em C++)**:
+  * *Amplitudes Anatômicas Refinadas (Blender 5.1)*:
+    * `BrowUp`: Elevação expressiva expandida (+16.5mm) para ser claramente legível através da franja do cabelo de Remy.
+    * `BrowDown`: Franzimento corrugador expandido (-14mm Z, -11mm medial) para conferir dramaticidade e tensão clínica realista.
+    * `Smile`: Projeção zigomática ampliada (+11mm Z, +13mm lateral) destacando as maçãs do rosto.
+    * `Squint`: Elevação palpebral inferior ampliada (+7.5mm) nos sorrisos de Duchenne e foco.
+  * *Micro-movimentos Orgânicos em Repouso / Escuta*:
+    * Micro-respiração facial contínua ($\pm 0.03$ bochechas, $\pm 0.04$ sobrancelhas) sincronizada com o ciclo respiratório torácico.
+    * Ondas cognitivas e de atenção a cada 3–5 segundos (`ThoughtWave`), variando levemente a postura das sobrancelhas e o olhar, eliminando o aspecto de estátua ou manequim quando em silêncio.
+    * Linha de base acolhedora (`0.18 * Engagement`), mantendo o rosto relaxado e receptivo enquanto escuta o aluno.
+  * *Prosódia e Expressividade Ativa Durante a Fala*:
+    * Transição suave para o modo de conversação ativa (`SpeechActivity` via `FInterpTo`).
+    * Flexão dinâmica das bochechas/zigomáticos com as sílabas e volume vocal (`0.30 * Speech + 0.15 * SpeechPeak`), evitando que apenas a mandíbula se mova como um boneco de ventríloquo.
+    * Elevação conversacional das sobrancelhas para ênfase nas palavras (`0.35 * SpeechActivity + SpeechBrowRaise * SpeechPeak`), com relaxamento elástico do corrugador.
 * **Respiração Torácica Orgânica**:
   * Inclusão de oscilação respiratória senoidal assimétrica contínua (~0.24 Hz / 14 ciclos por minuto) em `Spine1` e `Spine2` via `PatientAnimInstance.cpp`, eliminando a rigidez do tronco sentado.
 * **Seguidor de Envelope de Áudio Ativo**:

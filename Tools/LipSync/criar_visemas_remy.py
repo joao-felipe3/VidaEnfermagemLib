@@ -1,4 +1,4 @@
-﻿"""Cria morph targets de boca, olhos e expressão no SK_Remy (rig Mixamo sem osso de mandíbula e olhos).
+"""Cria morph targets de boca, olhos e expressão no SK_Remy (rig Mixamo sem osso de mandíbula e olhos).
 
 Rodar com o Blender em modo background:
     blender -b --factory-startup --python criar_visemas_remy.py -- <SK_Remy.fbx> <saida.fbx> [pasta_previews]
@@ -349,46 +349,46 @@ def build(o):
         center, r, _ = min(eyes, key=lambda e: abs(e[0].x - p.x))
         return rotate_about_x(p, center, GAZE_PITCH_ANGLE)
 
-    # --- EXPRESSÕES FACIAIS VÍVIDAS E ANATÔMICAS ---
+    # --- EXPRESSÕES FACIAIS VÍVIDAS E ANATÔMICAS (AMPLITUDE VR OTIMIZADA) ---
     def brow_up(i, p):
         if i in lashes or i in eyeball_verts or i in interior or i in hair or p.y > -0.10:
             return None
-        if not (3.50 < p.z < 3.68 and abs(p.x) < 0.11 and p.y < -0.17):
+        if not (3.48 < p.z < 3.68 and abs(p.x) < 0.12 and p.y < -0.17):
             return None
         w_x = 1.0 - smoothstep(0.06, 0.11, abs(p.x))
-        w_z = smoothstep(3.50, 3.54, p.z) * (1.0 - smoothstep(3.58, 3.67, p.z))
+        w_z = smoothstep(3.48, 3.53, p.z) * (1.0 - smoothstep(3.58, 3.67, p.z))
         w = w_x * w_z
         if w <= 0.001:
             return None
-        return p + Vector((0.0, 0.002 * w, 0.0125 * w))
+        return p + Vector((0.0, 0.002 * w, 0.0165 * w))
 
     def brow_down(i, p):
         if i in lashes or i in eyeball_verts or i in interior or i in hair or p.y > -0.10:
             return None
-        if not (3.50 < p.z < 3.62 and abs(p.x) < 0.09 and p.y < -0.18):
+        if not (3.48 < p.z < 3.63 and abs(p.x) < 0.10 and p.y < -0.17):
             return None
         ax = abs(p.x)
-        w_spread = 1.0 - smoothstep(0.05, 0.08, ax)
-        w_z = smoothstep(3.50, 3.53, p.z) * (1.0 - smoothstep(3.56, 3.62, p.z))
+        w_spread = 1.0 - smoothstep(0.05, 0.09, ax)
+        w_z = smoothstep(3.48, 3.53, p.z) * (1.0 - smoothstep(3.56, 3.63, p.z))
         w = w_spread * w_z
         if w <= 0.001:
             return None
         inward_scale = smoothstep(0.002, 0.035, ax)
-        dx = - (p.x / max(ax, 1e-5)) * 0.008 * w * inward_scale
-        dy = -0.0025 * w
-        dz = -0.010 * w
+        dx = - (p.x / max(ax, 1e-5)) * 0.011 * w * inward_scale
+        dy = -0.0035 * w
+        dz = -0.014 * w
         return p + Vector((dx, dy, dz))
 
     def smile(i, p):
         if i in interior or i in lashes or i in eyeball_verts or i in hair or p.y > -0.10:
             return None
         corner_x = math.copysign(MOUTH_HALF_WIDTH, p.x)
-        d_corner = math.sqrt(((p.x - corner_x)/0.045)**2 + ((p.y - (-0.235))/0.035)**2 + ((p.z - SEAM_Z)/0.035)**2)
+        d_corner = math.sqrt(((p.x - corner_x)/0.048)**2 + ((p.y - (-0.235))/0.038)**2 + ((p.z - SEAM_Z)/0.038)**2)
         w_corner = 1.0 - smoothstep(0.0, 1.0, d_corner) if p.y < -0.20 else 0.0
 
         cheek_pos = Vector((math.copysign(0.065, p.x), -0.210, 3.425))
         d_cheek = (p - cheek_pos).length
-        w_cheek = 1.0 - smoothstep(0.0, 0.055, d_cheek) if p.y < -0.18 else 0.0
+        w_cheek = 1.0 - smoothstep(0.0, 0.060, d_cheek) if p.y < -0.18 else 0.0
 
         w_eye_squint = 0.0
         center, r, _ = min(eyes, key=lambda e: abs(e[0].x - p.x))
@@ -401,9 +401,9 @@ def build(o):
         if not (w_corner or w_cheek or w_eye_squint):
             return None
 
-        disp_x = math.copysign(0.006 * w_corner + 0.003 * w_cheek, p.x)
-        disp_y = 0.004 * w_corner - 0.004 * w_cheek - 0.002 * w_eye_squint
-        disp_z = 0.010 * w_corner + 0.008 * w_cheek + 0.003 * w_eye_squint
+        disp_x = math.copysign(0.008 * w_corner + 0.004 * w_cheek, p.x)
+        disp_y = 0.005 * w_corner - 0.005 * w_cheek - 0.003 * w_eye_squint
+        disp_z = 0.013 * w_corner + 0.011 * w_cheek + 0.004 * w_eye_squint
         return p + Vector((disp_x, disp_y, disp_z))
 
     def squint(i, p):
@@ -415,10 +415,10 @@ def build(o):
         if abs(dx) < 1.1 * r and -0.70 * r <= dz < 0.10 * r and p.y < -0.18:
             u = dx / (1.1 * r)
             w_x = math.cos(min(abs(u), 1.0) * math.pi * 0.5) ** 1.3
-            w_z = 1.0 - smoothstep(0.10 * r, 0.60 * r, -dz)
+            w_z = 1.0 - smoothstep(0.10 * r, 0.65 * r, -dz)
             w = w_x * w_z
             if w > 0.001:
-                return p + Vector((0.0, -0.002 * w, 0.005 * w))
+                return p + Vector((0.0, -0.003 * w, 0.0075 * w))
         return None
 
     add_key("JawOpen", jaw)
