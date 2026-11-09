@@ -70,6 +70,25 @@ No início do ciclo de trabalho atual, após estudo do material e do TCC desenvo
   * `importar_na_unreal.bat`: Importação direta de áudios, DataTable e configuração do `BP_Patient` via linha de comando (`configurar_paciente_ue.py`).
   * `ouvir_amostras.bat`: Painel comparativo interativo em HTML (`amostras.html`) para validação auditiva.
 
+### ✅ 3.7. Humanização Visual: Expressividade Facial, Piscada Anatômica, Olhar Vivo e Respiração
+* **Diagnóstico e Correção da Piscada (`Blink`)**:
+  * *Problema anterior*: A rotação linear dos vértices arrastava os cantos dos olhos (canthi medial e lateral) para dentro da maxila, causando a impressão de uma "pele esticada não-natural" caindo sobre a face.
+  * *Solução matemática*: Ancoragem dos ligamentos cantais (movimento zero nas extremidades) com perfil senoidal/parabólico (`math.cos(u * pi * 0.5) ** 1.3`), preservando a calota esférica do globo ocular e sincronizando o rim dos cílios superiores para selar perfeitamente contra a pálpebra inferior sem deformações.
+* **Olhar Vivo e Rastreamento Ocular (Rig Mixamo sem Bones de Olho)**:
+  * *Problema anterior*: O rig do Mixamo não possui `LeftEye`/`RightEye` bones; o código C++ não conseguia girar os olhos, deixando os alunos com a sensação de um boneco estático com olhar congelado para a frente.
+  * *Solução*: Criação de 4 novos morph targets esféricos (`EyeLookLeft`, `EyeLookRight`, `EyeLookUp`, `EyeLookDown`) no Blender 5.1 que rotacionam as ilhas dos globos oculares em seus centros ópticos.
+  * *Integração C++*: `PatientAnimInstance` computa micro-sacadas oculares e rotação até o jogador, passando os valores normalizados para `PatientLookAtComponent`, que aciona os morphs dos olhos imediatamente antes da cabeça virar.
+* **Expressões Faciais Vívidas em Escala de VR**:
+  * Reformulação completa das amplitudes de expressão no Blender e C++ para legibilidade a 1,5–2 metros de distância no Meta Quest:
+    * `Smile`: Cantos da boca elevados (+10mm), bochechas projetadas (+8mm Z, -4mm Y) e contração palpebral inferior Duchenne.
+    * `BrowDown`: Franzimento do músculo corrugador (-8mm para a linha média, -10mm Z) com transição contínua sem descontinuidades no centro da glabela.
+    * `BrowUp`: Elevação expressiva do arco superciliar e testa (+12.5mm Z) sincronizada com os picos da fala e saudações.
+    * `Squint`: Contração palpebral para desconforto, dor ou foco.
+* **Respiração Torácica Orgânica**:
+  * Inclusão de oscilação respiratória senoidal assimétrica contínua (~0.24 Hz / 14 ciclos por minuto) em `Spine1` e `Spine2` via `PatientAnimInstance.cpp`, eliminando a rigidez do tronco sentado.
+* **Seguidor de Envelope de Áudio Ativo**:
+  * Configuração de `EnvelopeFollowerAttackTime = 20` e `EnvelopeFollowerReleaseTime = 100` no `UPatientVoiceComponent`, garantindo modulação realista da mandíbula em função da energia sonora.
+
 ---
 
 ## 4. 🧭 Planejamento e Próximos Passos

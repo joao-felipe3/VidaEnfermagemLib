@@ -5,9 +5,9 @@
 Requer o plugin Python Editor Script Plugin habilitado. O que faz:
   1. Importa output/*.wav para /Game/Audio/Paciente
   2. Importa output/DT_FalasPaciente.csv como DataTable (linha FPatientVoiceLine)
-  3. No BP_Patient: troca a malha "remy" por SK_Remy_Visemas e adiciona o componente PatientVoice
-     apontando para a DataTable
-Pode ser rodado de novo: reimporta os arquivos e reaproveita o componente existente.
+  3. No BP_Patient: troca a malha "remy" por SK_Remy_Visemas, adiciona o componente PatientVoice
+     apontando para a DataTable e o PatientLookAt (paciente olha para o estudante)
+Pode ser rodado de novo: reimporta os arquivos e reaproveita os componentes existentes.
 """
 
 import os
@@ -22,6 +22,7 @@ PATIENT_BP = "/Game/Blueprints/Patient/BP_Patient"
 MESH_COMPONENT = "remy"
 VISEME_MESH = "/Game/RefAssets/Remy/SK_Remy_Visemas"
 VOICE_COMPONENT = "PatientVoice"
+LOOK_COMPONENT = "PatientLookAt"
 
 
 def log(msg):
@@ -69,6 +70,20 @@ def find_subobject(subsystem, handles, name):
     return None, None
 
 
+def ensure_component(subsystem, bp, handles, name, cls):
+    _, component = find_subobject(subsystem, handles, name)
+    if component is None:
+        params = unreal.AddNewSubobjectParams(parent_handle=handles[0], new_class=cls, blueprint_context=bp)
+        handle, fail = subsystem.add_new_subobject(params)
+        if not fail.is_empty():
+            raise RuntimeError(f"não foi possível adicionar o componente {name}: {fail}")
+        subsystem.rename_subobject(handle, unreal.Text(name))
+        component = unreal.SubobjectDataBlueprintFunctionLibrary.get_object(
+            unreal.SubobjectDataBlueprintFunctionLibrary.get_data(handle))
+        log(f"componente {name} adicionado")
+    return component
+
+
 def setup_patient(table):
     bp = unreal.load_asset(PATIENT_BP)
     mesh = unreal.load_asset(VISEME_MESH)
@@ -85,18 +100,9 @@ def setup_patient(table):
     log(f"esqueleto antigo={old_skel.get_path_name() if old_skel else None} novo={new_skel.get_path_name()}")
     log(f"morph targets: {[str(n) for n in mesh.get_all_morph_target_names()]}")
 
-    _, voice = find_subobject(subsystem, handles, VOICE_COMPONENT)
-    if voice is None:
-        params = unreal.AddNewSubobjectParams(
-            parent_handle=handles[0], new_class=unreal.PatientVoiceComponent, blueprint_context=bp)
-        handle, fail = subsystem.add_new_subobject(params)
-        if not fail.is_empty():
-            raise RuntimeError(f"não foi possível adicionar o componente: {fail}")
-        subsystem.rename_subobject(handle, unreal.Text(VOICE_COMPONENT))
-        voice = unreal.SubobjectDataBlueprintFunctionLibrary.get_object(
-            unreal.SubobjectDataBlueprintFunctionLibrary.get_data(handle))
-        log("componente PatientVoice adicionado")
+    voice = ensure_component(subsystem, bp, handles, VOICE_COMPONENT, unreal.PatientVoiceComponent)
     voice.set_editor_property("voice_lines", table)
+    ensure_component(subsystem, bp, handles, LOOK_COMPONENT, unreal.PatientLookAtComponent)
 
     unreal.BlueprintEditorLibrary.compile_blueprint(bp)
     unreal.EditorAssetLibrary.save_loaded_asset(bp, only_if_is_dirty=False)

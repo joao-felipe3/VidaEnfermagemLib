@@ -82,7 +82,9 @@ void UPatientVoiceComponent::BeginPlay()
 	}
 	VoiceAudio->RegisterComponent();
 
-	// O envelope só é calculado se o delegate estiver ligado antes do Play
+	// O envelope é calculado automaticamente pelo áudio renderer quando o delegate é registrado
+	VoiceAudio->EnvelopeFollowerAttackTime = 20;
+	VoiceAudio->EnvelopeFollowerReleaseTime = 100;
 	VoiceAudio->OnAudioSingleEnvelopeValue.AddDynamic(this, &UPatientVoiceComponent::HandleEnvelope);
 	VoiceAudio->OnAudioFinished.AddDynamic(this, &UPatientVoiceComponent::HandleAudioFinished);
 

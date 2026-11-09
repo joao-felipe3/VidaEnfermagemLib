@@ -1,3 +1,4 @@
 piper-tts>=1.8.0
 numpy
 scipy
+faster-whisper
