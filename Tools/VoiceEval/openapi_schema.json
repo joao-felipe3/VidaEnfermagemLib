@@ -1,0 +1,726 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "voice-eval-api",
+    "description": "Transcreve a fala do aluno e avalia a resposta contra crit\u00e9rios do cen\u00e1rio.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenarios": {
+      "get": {
+        "summary": "List Scenarios",
+        "operationId": "list_scenarios_v1_scenarios_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScenarioSummary"
+                  },
+                  "title": "Response List Scenarios V1 Scenarios Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenarios/{scenario_id}": {
+      "get": {
+        "summary": "Get Scenario",
+        "operationId": "get_scenario_v1_scenarios__scenario_id__get",
+        "parameters": [
+          {
+            "name": "scenario_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scenario Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/evaluate": {
+      "post": {
+        "summary": "Evaluate Audio",
+        "description": "Multipart: \u00e1udio da resposta do aluno + ids do cen\u00e1rio e da pergunta.",
+        "operationId": "evaluate_audio_v1_evaluate_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_evaluate_audio_v1_evaluate_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/evaluate/base64": {
+      "post": {
+        "summary": "Evaluate Base64",
+        "description": "Igual a /evaluate, com o \u00e1udio em base64 num JSON (mais f\u00e1cil no Blueprint).",
+        "operationId": "evaluate_base64_v1_evaluate_base64_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateBase64Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/evaluate/text": {
+      "post": {
+        "summary": "Evaluate Text",
+        "description": "Avalia uma transcri\u00e7\u00e3o que voc\u00ea j\u00e1 tem. \u00datil para testes e ajuste do prompt.",
+        "operationId": "evaluate_text_v1_evaluate_text_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateTextRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_evaluate_audio_v1_evaluate_post": {
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "title": "Scenario Id"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "audio": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Audio"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scenario_id",
+          "question_id",
+          "audio"
+        ],
+        "title": "Body_evaluate_audio_v1_evaluate_post"
+      },
+      "CriterionResult": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "met": {
+            "type": "boolean",
+            "title": "Met"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required"
+          },
+          "evidence": {
+            "type": "string",
+            "title": "Evidence",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "met",
+          "required"
+        ],
+        "title": "CriterionResult"
+      },
+      "CriticalErrorResult": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "evidence": {
+            "type": "string",
+            "title": "Evidence",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "description"
+        ],
+        "title": "CriticalErrorResult"
+      },
+      "EvaluateBase64Request": {
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "title": "Scenario Id"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "audio_base64": {
+            "type": "string",
+            "maxLength": 35000000,
+            "title": "Audio Base64"
+          },
+          "audio_format": {
+            "type": "string",
+            "enum": [
+              "wav",
+              "mp3",
+              "m4a",
+              "mp4",
+              "mpeg",
+              "mpga",
+              "webm"
+            ],
+            "title": "Audio Format",
+            "default": "wav"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scenario_id",
+          "question_id",
+          "audio_base64"
+        ],
+        "title": "EvaluateBase64Request"
+      },
+      "EvaluateTextRequest": {
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "title": "Scenario Id"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "transcript": {
+            "type": "string",
+            "title": "Transcript"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scenario_id",
+          "question_id",
+          "transcript"
+        ],
+        "title": "EvaluateTextRequest"
+      },
+      "EvaluationResult": {
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "title": "Api Version",
+            "default": "1"
+          },
+          "scenario_id": {
+            "type": "string",
+            "title": "Scenario Id"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "evaluated",
+              "retry"
+            ],
+            "title": "Status"
+          },
+          "retry_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "empty_transcript",
+                  "unintelligible"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Reason"
+          },
+          "transcript": {
+            "type": "string",
+            "title": "Transcript"
+          },
+          "score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Score"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionResult"
+            },
+            "type": "array",
+            "title": "Criteria"
+          },
+          "critical_errors": {
+            "items": {
+              "$ref": "#/components/schemas/CriticalErrorResult"
+            },
+            "type": "array",
+            "title": "Critical Errors"
+          },
+          "feedback": {
+            "type": "string",
+            "title": "Feedback"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "title": "Latency Ms",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "scenario_id",
+          "question_id",
+          "status",
+          "transcript",
+          "score",
+          "passed",
+          "criteria",
+          "critical_errors",
+          "feedback"
+        ],
+        "title": "EvaluationResult"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "QuestionPublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "patient_line": {
+            "type": "string",
+            "title": "Patient Line"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "patient_line"
+        ],
+        "title": "QuestionPublic",
+        "description": "O que o cliente pode ver de uma pergunta. Nunca inclui resposta ideal nem crit\u00e9rios."
+      },
+      "ScenarioPublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "question_count": {
+            "type": "integer",
+            "title": "Question Count"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionPublic"
+            },
+            "type": "array",
+            "title": "Questions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "language",
+          "status",
+          "question_count",
+          "questions"
+        ],
+        "title": "ScenarioPublic"
+      },
+      "ScenarioSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "question_count": {
+            "type": "integer",
+            "title": "Question Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "language",
+          "status",
+          "question_count"
+        ],
+        "title": "ScenarioSummary"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

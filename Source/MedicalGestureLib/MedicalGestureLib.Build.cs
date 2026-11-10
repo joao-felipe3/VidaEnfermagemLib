@@ -8,7 +8,16 @@ public class MedicalGestureLib : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
+		PublicDependencyModuleNames.AddRange(new string[] {
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"InputCore",
+			"HTTP",
+			"Json",
+			"JsonUtilities",
+			"Voice"
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "UMG" });
 
