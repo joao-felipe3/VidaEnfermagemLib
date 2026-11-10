@@ -149,4 +149,5 @@ private:
 	float Squint = 0.0f;
 	float SpeechPeak = 0.0f;
 	float SpeechActivity = 0.0f;
+	bool bWasSpeaking = false;
 };

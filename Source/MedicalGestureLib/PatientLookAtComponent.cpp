@@ -91,6 +91,13 @@ void UPatientLookAtComponent::UpdateFace(float DeltaTime, bool bSpeaking, float 
 	}
 	const float Now = GetWorld()->GetTimeSeconds();
 
+	// Disparo de piscada orgânica no início de uma fala (humanos quase sempre piscam ao começar uma oração)
+	if (bSpeaking && !bWasSpeaking && BlinkTime < 0.0f)
+	{
+		Blink();
+	}
+	bWasSpeaking = bSpeaking;
+
 	// Piscada: fecha em 70 ms, segura 30 ms e abre em 130 ms; às vezes pisca duas vezes
 	constexpr float CloseTime = 0.07f, HoldTime = 0.03f, OpenTime = 0.13f;
 	if (BlinkTime < 0.0f && Now >= NextBlink)
@@ -124,7 +131,9 @@ void UPatientLookAtComponent::UpdateFace(float DeltaTime, bool bSpeaking, float 
 			else
 			{
 				bDoubleBlink = false;
-				NextBlink = Now + FMath::FRandRange(BlinkInterval.X, BlinkInterval.Y);
+				const float IntervalMin = bSpeaking ? BlinkInterval.X * 0.70f : BlinkInterval.X;
+				const float IntervalMax = bSpeaking ? BlinkInterval.Y * 0.85f : BlinkInterval.Y;
+				NextBlink = Now + FMath::FRandRange(IntervalMin, IntervalMax);
 			}
 		}
 	}
@@ -181,18 +190,18 @@ void UPatientLookAtComponent::UpdateFace(float DeltaTime, bool bSpeaking, float 
 
 	// 2. SOBRANCELHAS ERGUIDAS (BrowUp):
 	// - Estado normal: sobrancelhas relaxadas no repouso com micro-elevação atenta viva (ThoughtWave)
-	// - Saudação: arqueamento caloroso e acolhedor (0.40 * Greeting)
-	// - Falando: acentuação conversacional elegante e legível (0.20*SpeechActivity + SpeechBrowRaise*SpeechPeak)
-	const float IdleBrowUp = FMath::Max(IdleAttentiveLift, 0.40f * Greeting);
-	const float SpeechBrowUp = 0.20f * SpeechActivity + (SpeechBrowRaise * 0.85f) * SpeechPeak + 0.08f * FMath::Sin(Now * 3.5f) * Speech;
-	float WantedBrowUp = FMath::Clamp(FMath::Max(IdleBrowUp, SpeechBrowUp), 0.0f, 0.65f);
+	// - Saudação: arqueamento caloroso e acolhedor (0.42 * Greeting)
+	// - Falando: acentuação conversacional elegante e legível (0.22*SpeechActivity + SpeechBrowRaise*SpeechPeak)
+	const float IdleBrowUp = FMath::Max(IdleAttentiveLift, 0.42f * Greeting);
+	const float SpeechBrowUp = 0.22f * SpeechActivity + (SpeechBrowRaise * 0.90f) * SpeechPeak + 0.08f * FMath::Sin(Now * 3.5f) * Speech;
+	float WantedBrowUp = FMath::Clamp(FMath::Max(IdleBrowUp, SpeechBrowUp), 0.0f, 0.70f);
 
 	// 3. PREOCUPAÇÃO / CONCENTRAÇÃO (BrowDown):
 	// - Estado normal: leve concentração médica de fundo
 	// - Ao sorrir ou cumprimentar: o músculo corrugador relaxa organicamente
 	const float BaseConcernAdjusted = BaseConcern + BreathMicroConcern + IdleConcernShift;
-	const float SpeakingConcernRelief = 0.10f * SpeechPeak;
-	const float SmileConcernRelief = 0.25f * WantedSmile;
+	const float SpeakingConcernRelief = 0.12f * SpeechPeak;
+	const float SmileConcernRelief = 0.28f * WantedSmile;
 	float WantedBrowDown = FMath::Clamp((BaseConcernAdjusted - SpeakingConcernRelief - SmileConcernRelief) * (1.0f - 0.35f * Greeting), 0.0f, 0.65f);
 
 	if (ExpressionTime > 0.0f)
@@ -207,13 +216,36 @@ void UPatientLookAtComponent::UpdateFace(float DeltaTime, bool bSpeaking, float 
 	BrowUp = FMath::FInterpTo(BrowUp, WantedBrowUp, DeltaTime, 8.0f);
 	BrowDown = FMath::FInterpTo(BrowDown, WantedBrowDown, DeltaTime, 4.0f);
 
-	// 4. CONTRAÇÃO OCULAR / SQUINT:
-	// - Sorriso Duchenne nos cantos dos olhos + foco nos picos de fala (olhos vivos e expressivos)
-	const float WantedSquint = FMath::Clamp(Smile * 0.40f + BrowDown * 0.35f + 0.30f * SpeechPeak, 0.0f, 0.85f);
-	Squint = FMath::FInterpTo(Squint, WantedSquint, DeltaTime, 5.0f);
+	// 4. CONTRAÇÃO OCULAR / SQUINT (AU6 Cheek Raiser + AU7 Lid Tightener):
+	// - Tônus de atenção vivo de fundo (elimina o efeito de manequim estático e olhar esbugalhado)
+	const float BaseAttentiveSquint = Engagement * (0.12f + IdleAttentiveLift * 0.35f);
+	// - Sorriso Duchenne autêntico nos cantos dos olhos
+	const float SmileDuchenneSquint = Smile * 0.45f;
+	// - Expressividade dinâmica de fala (a musculatura periocular flexiona com a ênfase silábica)
+	const float SpeechSquint = 0.16f * SpeechActivity + 0.32f * SpeechPeak;
+	// - Concentração / preocupação clínica
+	const float ConcernSquint = BrowDown * 0.25f;
+
+	const float WantedSquint = FMath::Clamp(BaseAttentiveSquint + SmileDuchenneSquint + SpeechSquint + ConcernSquint, 0.0f, 0.85f);
+	Squint = FMath::FInterpTo(Squint, WantedSquint, DeltaTime, 6.0f);
+
+	// 5. GAZE-EYELID SYNERGY (Inervação óculo-palpebral fisiológica de Hering):
+	// Quando os olhos olham para baixo (NormPitch < 0), a pálpebra superior desce suavemente para acompanhar a córnea
+	// Isso impede 100% de exposição artificial da esclera superior ("olhar arregalado/esbugalhado")
+	float GazeLidFollow = 0.0f;
+	if (const UPatientAnimInstance* Instance = AnimInstance.Get())
+	{
+		const float SafeMaxPitch = FMath::Max(MaxEyePitch, 1.0f);
+		const float NormPitch = FMath::Clamp(Instance->EyePitch / SafeMaxPitch, -1.0f, 1.0f);
+		if (NormPitch < 0.0f)
+		{
+			GazeLidFollow = -NormPitch * 0.22f;
+		}
+	}
+	const float EffectiveBlink = FMath::Clamp(BlinkWeight + GazeLidFollow, 0.0f, 1.0f);
 
 	const TPair<FName, float> Morphs[] = {
-		{ BlinkMorph, BlinkWeight },
+		{ BlinkMorph, EffectiveBlink },
 		{ BrowUpMorph, BrowUp },
 		{ BrowDownMorph, BrowDown },
 		{ SmileMorph, Smile },

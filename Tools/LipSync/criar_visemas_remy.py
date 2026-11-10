@@ -364,8 +364,8 @@ def blink(i, p):
             return rotate_about_x(p, center, LOWER_BLINK_ANGLE * w)
     return None
 
-GAZE_YAW_ANGLE = math.radians(18.0)
-GAZE_PITCH_ANGLE = math.radians(14.0)
+GAZE_YAW_ANGLE = math.radians(22.0)
+GAZE_PITCH_ANGLE = math.radians(16.0)
 
 def eye_look_left(i, p):
     if i not in eyeball_verts:
@@ -392,32 +392,48 @@ def eye_look_down(i, p):
     return rotate_about_x(p, center, GAZE_PITCH_ANGLE)
 
 def brow_up(i, p):
-    if i in lashes or i in eyeball_verts or i in interior_kinds or i in hair or p.y > -0.10 or p.z < 3.45:
+    if i in eyeball_verts or i in interior_kinds or i in hair or p.y > -0.10 or p.z < 3.45:
         return None
+        
+    # Cílios superiores acompanham suavemente a abertura atenta do olhar
+    if i in lashes:
+        center_l, r_l, which_lash = lashes[i]
+        if which_lash == "upper":
+            u = (p.x - center_l.x) / (1.05 * r_l)
+            w_x = math.cos(min(abs(u), 1.0) * math.pi * 0.5) ** 1.3
+            return p + Vector((0.0, -0.0006 * w_x, 0.0022 * w_x))
+        return None
+
     if not (3.48 < p.z < 3.68 and abs(p.x) < 0.12 and p.y < -0.17):
         return None
-    w_x = 1.0 - smoothstep(0.06, 0.11, abs(p.x))
-    w_z = smoothstep(3.48, 3.53, p.z) * (1.0 - smoothstep(3.58, 3.67, p.z))
+    ax = abs(p.x)
+    # Arco superciliar completo visível logo abaixo da franja
+    w_x = math.cos(min(max((ax - 0.042) / 0.070, 0.0), 1.0) * math.pi * 0.5) ** 1.2
+    # Transição suave da dobra palpebral (3.49) até o topo do arco superciliar (3.62)
+    w_z = smoothstep(3.48, 3.53, p.z) * (1.0 - smoothstep(3.58, 3.66, p.z))
     w = w_x * w_z
     if w <= 0.001:
         return None
-    asym = 1.04 if p.x > 0 else 0.96
-    return p + Vector((0.0, 0.0015 * w * asym, 0.0120 * w * asym))
+    asym = 1.03 if p.x > 0 else 0.97
+    return p + Vector((0.0, 0.0012 * w * asym, 0.0105 * w * asym))
 
 def brow_down(i, p):
     if i in lashes or i in eyeball_verts or i in interior_kinds or i in hair or p.y > -0.10 or p.z < 3.45:
         return None
-    if not (3.48 < p.z < 3.68 and abs(p.x) < 0.10 and p.y < -0.17):
+    if not (3.47 < p.z < 3.64 and abs(p.x) < 0.10 and p.y < -0.16):
         return None
     ax = abs(p.x)
-    w_x = 1.0 - smoothstep(0.04, 0.09, ax)
-    w_z = smoothstep(3.48, 3.52, p.z) * (1.0 - smoothstep(3.56, 3.63, p.z))
+    
+    # Músculo corrugador supercilii:
+    # No plano sagital mediano (ax = 0), a contração medial é EXATAMENTE zero, impedindo colisão/fenda
+    w_x = math.sin(min(max(ax / 0.080, 0.0), 1.0) * math.pi) ** 1.2
+    w_z = smoothstep(3.47, 3.52, p.z) * (1.0 - smoothstep(3.56, 3.63, p.z))
     w = w_x * w_z
     if w <= 0.001:
         return None
-    disp_x = -math.copysign(0.0085 * w, p.x)
-    disp_y = 0.0060 * w
-    disp_z = -0.0100 * w
+    disp_x = -math.copysign(0.0038 * w, p.x)
+    disp_y = 0.0025 * w
+    disp_z = -0.0070 * w
     return p + Vector((disp_x, disp_y, disp_z))
 
 MOUTH_CORNER_X = 0.052
@@ -458,18 +474,51 @@ def smile(i, p):
     return p + Vector((disp_x, disp_y, disp_z))
 
 def squint(i, p):
-    if i in interior_kinds or i in lashes or i in eyeball_verts or i in hair or p.y > -0.12 or p.z < 3.35:
+    if i in interior_kinds or i in eyeball_verts or i in hair or p.y > -0.12 or p.z < 3.35:
         return None
+        
     center, r, _ = min(eyes, key=lambda e: abs(e[0].x - p.x))
     dx = p.x - center.x
     dz = p.z - center.z
-    if abs(dx) < 1.1 * r and -0.70 * r <= dz < 0.10 * r and p.y < -0.18:
-        u = dx / (1.1 * r)
+    
+    # 1. Cílios (acompanham perfeitamente as pálpebras, sem descolamento ou fendas)
+    if i in lashes:
+        center_l, r_l, which_lash = lashes[i]
+        u = (p.x - center_l.x) / (1.05 * r_l)
         w_x = math.cos(min(abs(u), 1.0) * math.pi * 0.5) ** 1.3
-        w_z = 1.0 - smoothstep(0.10 * r, 0.65 * r, -dz)
+        if which_lash == "lower":
+            # Cílio inferior sobe junto da pálpebra inferior
+            return p + Vector((0.0, -0.0020 * w_x, 0.0052 * w_x))
+        else:
+            # Cílio superior suaviza sutilmente para baixo na fresta amendoada
+            return p + Vector((0.0, 0.0008 * w_x, -0.0016 * w_x))
+
+    # 2. Pálpebra inferior (AU7 - Lid Tightener / elevação e espessamento)
+    if abs(dx) < 1.15 * r and -0.75 * r <= dz < 0.12 * r and p.y < -0.17:
+        u = dx / (1.15 * r)
+        w_x = math.cos(min(abs(u), 1.0) * math.pi * 0.5) ** 1.3
+        w_z = (1.0 - smoothstep(0.10 * r, 0.70 * r, -dz)) if dz < 0 else (1.0 - smoothstep(0.0, 0.12 * r, dz))
         w = w_x * w_z
         if w > 0.001:
-            return p + Vector((0.0, -0.0025 * w, 0.0065 * w))
+            disp_x = -math.copysign(0.0008 * w, p.x)
+            return p + Vector((disp_x, -0.0024 * w, 0.0055 * w))
+            
+    # 3. Pálpebra superior (suavização descendente amendoada típica do sorriso ocular Duchenne)
+    if abs(dx) < 1.10 * r and 0.10 * r <= dz < 0.65 * r and p.y < -0.17:
+        u = dx / (1.10 * r)
+        w_x = math.cos(min(abs(u), 1.0) * math.pi * 0.5) ** 1.3
+        w_z = 1.0 - smoothstep(0.10 * r, 0.60 * r, dz)
+        w = w_x * w_z
+        if w > 0.001:
+            return p + Vector((0.0, 0.0009 * w, -0.0018 * w))
+            
+    # 4. Canto lateral externo do olho / Pés de galinha (AU6 - Orbicularis oculi pars orbitalis)
+    dist_canthus = math.sqrt(((abs(p.x) - (abs(center.x) + 0.95 * r)) / 0.024) ** 2 + ((dz) / 0.020) ** 2)
+    if dist_canthus < 1.0 and p.y < -0.17:
+        w_c = 1.0 - smoothstep(0.0, 1.0, dist_canthus)
+        disp_x = -math.copysign(0.0018 * w_c, p.x)
+        return p + Vector((disp_x, -0.0012 * w_c, 0.0026 * w_c))
+        
     return None
 
 add_key("JawOpen", jaw)

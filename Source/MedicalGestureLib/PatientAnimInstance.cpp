@@ -66,35 +66,49 @@ void FPatientAnimInstanceProxy::Update(float DeltaSeconds)
 		PoseTime = Length > 0.0f ? FMath::Fmod(PoseTime + DeltaSeconds, Length) : 0.0f;
 	}
 
-	// Triângulo do olhar social (alternância foveal natural entre olho esquerdo, olho direito e boca do aluno)
+	// Movimentos sacádicos sociais e desvio reflexivo cognitivo (Cognitive Gaze Aversion):
+	// - Quando falando: desvia o olhar ~35% das vezes enquanto formula pensamento clínico ou relata sintomas
+	// - Quando escutando: alterna fovealmente entre olho esquerdo, olho direito e leitura labial do estudante
 	if (LifeTime >= NextSaccade)
 	{
 		static int32 SaccadeTargetIndex = 0;
-		SaccadeTargetIndex = (SaccadeTargetIndex + 1) % 4;
+		SaccadeTargetIndex = (SaccadeTargetIndex + 1) % 5;
 
-		switch (SaccadeTargetIndex)
+		const bool bIsSpeaking = Speech > 0.04f;
+
+		if (bIsSpeaking && SaccadeTargetIndex == 4)
 		{
-		case 0:
-			// Olho esquerdo do aluno
-			Saccade = FVector2D(-1.6f + Random.FRandRange(-0.3f, 0.3f), 0.4f + Random.FRandRange(-0.2f, 0.2f));
-			NextSaccade = LifeTime + Random.FRandRange(1.8f, 3.0f);
-			break;
-		case 1:
-			// Olho direito do aluno
-			Saccade = FVector2D(1.6f + Random.FRandRange(-0.3f, 0.3f), 0.4f + Random.FRandRange(-0.2f, 0.2f));
-			NextSaccade = LifeTime + Random.FRandRange(1.8f, 3.0f);
-			break;
-		case 2:
-			// Boca / comissura do aluno (leitura labial inconsciente de escuta)
-			Saccade = FVector2D(Random.FRandRange(-0.5f, 0.5f), -1.2f + Random.FRandRange(-0.3f, 0.3f));
-			NextSaccade = LifeTime + Random.FRandRange(1.0f, 2.0f);
-			break;
-		case 3:
-		default:
-			// Micro-desvio reflexivo de pensamento
-			Saccade = FVector2D(Random.FRandRange(-2.4f, 2.4f), Random.FRandRange(0.2f, 1.0f));
-			NextSaccade = LifeTime + Random.FRandRange(0.7f, 1.4f);
-			break;
+			// Desvio cognitivo ao formular pensamento durante a fala (olhar reflexivo lateral)
+			const float AversionSign = (Random.FRand() < 0.5f) ? -1.0f : 1.0f;
+			Saccade = FVector2D(AversionSign * Random.FRandRange(7.5f, 11.5f), Random.FRandRange(-3.5f, 2.0f));
+			NextSaccade = LifeTime + Random.FRandRange(0.8f, 1.4f);
+		}
+		else
+		{
+			switch (SaccadeTargetIndex)
+			{
+			case 0:
+				// Foco foveal no olho esquerdo do estudante
+				Saccade = FVector2D(-4.5f + Random.FRandRange(-0.8f, 0.8f), 0.8f + Random.FRandRange(-0.4f, 0.4f));
+				NextSaccade = LifeTime + Random.FRandRange(1.6f, 2.6f);
+				break;
+			case 1:
+				// Foco foveal no olho direito do estudante
+				Saccade = FVector2D(4.5f + Random.FRandRange(-0.8f, 0.8f), 0.8f + Random.FRandRange(-0.4f, 0.4f));
+				NextSaccade = LifeTime + Random.FRandRange(1.6f, 2.6f);
+				break;
+			case 2:
+				// Leitura orofacial na boca do estudante (escuta atenta e comunicação empática)
+				Saccade = FVector2D(Random.FRandRange(-1.2f, 1.2f), -4.2f + Random.FRandRange(-0.6f, 0.6f));
+				NextSaccade = LifeTime + Random.FRandRange(1.2f, 2.0f);
+				break;
+			case 3:
+			default:
+				// Micro-ajuste reflexivo rápido
+				Saccade = FVector2D(Random.FRandRange(-3.2f, 3.2f), Random.FRandRange(-1.0f, 1.5f));
+				NextSaccade = LifeTime + Random.FRandRange(0.9f, 1.6f);
+				break;
+			}
 		}
 	}
 }
@@ -185,10 +199,14 @@ void FPatientAnimInstanceProxy::ApplyLook(FPoseContext& Output)
 	const float WantedHeadPitch = FMath::Clamp(TargetPitch, -MaxHeadPitch, MaxHeadPitch) * Weight;
 	HeadYaw = FMath::FInterpTo(HeadYaw, WantedHeadYaw, DeltaTime, HeadSpeed);
 	HeadPitch = FMath::FInterpTo(HeadPitch, WantedHeadPitch, DeltaTime, HeadSpeed);
-	const float WantedEyeYaw = FMath::Clamp(TargetYaw * Weight - HeadYaw, -MaxEyeYaw, MaxEyeYaw) + Saccade.X * Weight;
-	const float WantedEyePitch = FMath::Clamp(TargetPitch * Weight - HeadPitch, -MaxEyePitch, MaxEyePitch) + Saccade.Y * Weight;
-	EyeYaw = FMath::FInterpTo(EyeYaw, WantedEyeYaw, DeltaTime, 18.0f);
-	EyePitch = FMath::FInterpTo(EyePitch, WantedEyePitch, DeltaTime, 18.0f);
+	// Micro-tremor nistágmico fisiológico contínuo (~1.4 Hz, micromovimento essencial para vida foveal)
+	const float EyeTremorX = 0.35f * FMath::Sin(LifeTime * 8.8f) + 0.15f * FMath::Sin(LifeTime * 23.0f);
+	const float EyeTremorY = 0.25f * FMath::Cos(LifeTime * 11.3f);
+
+	const float WantedEyeYaw = FMath::Clamp(TargetYaw * Weight - HeadYaw, -MaxEyeYaw, MaxEyeYaw) + (Saccade.X + EyeTremorX) * Weight;
+	const float WantedEyePitch = FMath::Clamp(TargetPitch * Weight - HeadPitch, -MaxEyePitch, MaxEyePitch) + (Saccade.Y + EyeTremorY) * Weight;
+	EyeYaw = FMath::FInterpTo(EyeYaw, WantedEyeYaw, DeltaTime, 28.0f);
+	EyePitch = FMath::FInterpTo(EyePitch, WantedEyePitch, DeltaTime, 28.0f);
 
 	// Vida: balanço leve o tempo todo, acenos curtos acompanhando a fala e inclinação lateral (head tilt)
 	const float IdleYaw = 1.3f * FMath::Sin(LifeTime * 0.37f) + 0.6f * FMath::Sin(LifeTime * 0.89f);
