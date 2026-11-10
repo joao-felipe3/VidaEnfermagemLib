@@ -1,29 +1,22 @@
-"""Reimporta SK_Remy_Visemas.fbx (gerado por criar_visemas_remy.py) no projeto, com o editor fechado:
-
-    UnrealEditor-Cmd.exe MedicalGestureLib.uproject -run=pythonscript -script="Tools/LipSync/importar_visemas_ue.py <fbx>"
-
-Requer o plugin Python Editor Script Plugin habilitado. Mantém esqueleto, materiais e physics asset do
-SK_Remy_Visemas atual e marca os materiais para uso com morph targets (senão a Unreal troca o material
-do rosto por um padrão na primeira fala).
-"""
-
 import sys
-
 import unreal
 
-FBX = sys.argv[-1]
+FBX = sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1].endswith(".fbx") else "c:/Users/GILSON/Documents/NakaGames/VidaEnfermagemLib-main/Tools/LipSync/SK_Remy_Visemas.fbx"
 FOLDER = "/Game/RefAssets/Remy"
 NAME = "SK_Remy_Visemas"
 
-
 def log(msg):
-    unreal.log_warning(f"VISEMAS: {msg}")
+    unreal.log_warning(f"VISEMAS_IMPORT: {msg}")
 
+skeleton = unreal.load_asset(f"{FOLDER}/SK_Remy_Skeleton")
+remy_ref = unreal.load_asset(f"{FOLDER}/SK_Remy")
 
-old = unreal.load_asset(f"{FOLDER}/{NAME}")
-skeleton = old.get_editor_property("skeleton")
-materials = [m.get_editor_property("material_interface") for m in old.get_editor_property("materials")]
-physics = old.get_editor_property("physics_asset")
+if not skeleton or not remy_ref:
+    log("ERRO: Esqueleto ou SK_Remy não encontrados!")
+    sys.exit(1)
+
+materials = [m.get_editor_property("material_interface") for m in remy_ref.get_editor_property("materials")]
+physics = remy_ref.get_editor_property("physics_asset")
 
 options = unreal.FbxImportUI()
 options.set_editor_property("import_mesh", True)
@@ -42,17 +35,24 @@ task.destination_path = FOLDER
 task.destination_name = NAME
 task.automated = True
 task.replace_existing = True
-task.save = False
+task.save = True
 task.options = options
+
+log(f"Importando {FBX} para {FOLDER}/{NAME}...")
 unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
 
-mesh = unreal.load_asset(f"{FOLDER}/{NAME}")
-slots = mesh.get_editor_property("materials")
+new_mesh = unreal.load_asset(f"{FOLDER}/{NAME}")
+if not new_mesh:
+    log("ERRO: Falha ao carregar novo asset importado!")
+    sys.exit(1)
+
+slots = new_mesh.get_editor_property("materials")
 for slot, material in zip(slots, materials):
     slot.set_editor_property("material_interface", material)
-mesh.set_editor_property("materials", slots)
-mesh.set_editor_property("physics_asset", physics)
-unreal.EditorAssetLibrary.save_loaded_asset(mesh, only_if_is_dirty=False)
+new_mesh.set_editor_property("materials", slots)
+new_mesh.set_editor_property("physics_asset", physics)
+
+unreal.EditorAssetLibrary.save_loaded_asset(new_mesh, only_if_is_dirty=False)
 
 for material in materials:
     base = material.get_base_material() if material else None
@@ -60,8 +60,8 @@ for material in materials:
         base.set_editor_property("used_with_morph_targets", True)
         unreal.MaterialEditingLibrary.recompile_material(base)
         unreal.EditorAssetLibrary.save_loaded_asset(base, only_if_is_dirty=False)
-        log(f"{base.get_name()}: Used with Morph Targets ligado")
+        log(f"{base.get_name()}: Used with Morph Targets habilitado")
 
-log(f"esqueleto={mesh.get_editor_property('skeleton').get_name()} "
-    f"morphs={[str(n) for n in mesh.get_all_morph_target_names()]}")
-log("OK")
+morph_names = [str(n) for n in new_mesh.get_all_morph_target_names()]
+log(f"SUCESSO TOTAL! Esqueleto={new_mesh.get_editor_property('skeleton').get_name()}")
+log(f"Morph targets ({len(morph_names)}): {morph_names}")

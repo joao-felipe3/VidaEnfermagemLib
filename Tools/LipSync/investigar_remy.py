@@ -250,3 +250,4 @@ for k in keys[1:]:
     k.value = 0.0
 
 print(f"\nRenderização concluída com sucesso! Total de imagens geradas: {total_renders}")
+
