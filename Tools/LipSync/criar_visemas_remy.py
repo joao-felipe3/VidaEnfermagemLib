@@ -521,6 +521,163 @@ def squint(i, p):
         
     return None
 
+def brow_inner_up(i, p):
+    if i in eyeball_verts or i in interior_kinds or i in hair or p.y > -0.10 or p.z < 3.45:
+        return None
+
+    center, r, _ = min(eyes, key=lambda e: abs(e[0].x - p.x))
+    dx = p.x - center.x
+
+    # 1. Cílios superiores na porção medial acompanham a elevação palpebral medial
+    if i in lashes:
+        center_l, r_l, which_lash = lashes[i]
+        if which_lash == "upper" and (center_l.x * (p.x - center_l.x) < 0): # lado medial nasal
+            u = abs(p.x - center_l.x) / (1.05 * r_l)
+            w_l = math.cos(min(u, 1.0) * math.pi * 0.5) ** 1.5
+            return p + Vector((0.0, -0.0004 * w_l, 0.0018 * w_l))
+        return None
+
+    if not (3.46 < p.z < 3.66 and abs(p.x) < 0.070 and p.y < -0.16):
+        return None
+
+    ax = abs(p.x)
+    # Porção medial do músculo frontal (AU1): pico medial entre ax=0.015 e 0.035
+    w_x = math.exp(-((ax - 0.022) ** 2) / (2 * (0.022 ** 2)))
+    # Altura vertical: elevação máxima no arco superciliar medial (3.52 a 3.59)
+    w_z = smoothstep(3.46, 3.53, p.z) * (1.0 - smoothstep(3.58, 3.66, p.z))
+    w = w_x * w_z
+    if w <= 0.001:
+        return None
+
+    asym = 1.02 if p.x > 0 else 0.98
+    # Deslocamento: elevação superior (+Z), leve tração medial (+X em direção ao centro) nula em ax=0
+    disp_x = -math.copysign(0.0012 * w * smoothstep(0.0, 0.020, ax), p.x)
+    disp_y = -0.0015 * w * asym
+    disp_z = 0.0090 * w * asym
+    return p + Vector((disp_x, disp_y, disp_z))
+
+def mouth_frown(i, p):
+    if i in interior_kinds or i in eyeball_verts or i in lashes or i in hair or p.y > -0.15 or p.z < 3.25:
+        return None
+
+    ax = abs(p.x)
+    # Foco anatômico na comissura labial (MOUTH_CORNER_X = 0.052, MOUTH_CORNER_Y = -0.210, MOUTH_CORNER_Z = 3.3565)
+    d_corner = math.sqrt(((ax - MOUTH_CORNER_X) / 0.032) ** 2 +
+                         ((p.y - MOUTH_CORNER_Y) / 0.030) ** 2 +
+                         ((p.z - MOUTH_CORNER_Z) / 0.026) ** 2)
+    w_corner = 1.0 - smoothstep(0.0, 1.0, d_corner) if p.y < -0.18 else 0.0
+
+    # Lábio inferior lateral (acompanha o rebaixamento da comissura)
+    w_lower = 0.0
+    if i in lower_indices and 3.330 < p.z <= 3.3565 and p.y < -0.210 and 0.020 < ax < 0.052:
+        w_lower = smoothstep(0.020, 0.052, ax) * smoothstep(3.330, 3.3565, p.z)
+
+    # Sulco lábio-mandibular (depressor anguli oris AU15)
+    w_dao = 0.0
+    if 3.26 < p.z < 3.34 and 0.030 < ax < 0.065 and p.y < -0.19:
+        w_dao = math.sin(smoothstep(3.26, 3.34, p.z) * math.pi) * (1.0 - smoothstep(0.030, 0.065, ax))
+
+    w = max(w_corner, w_lower * 0.75, w_dao * 0.50)
+    if w <= 0.001:
+        return None
+
+    asym = 1.02 if p.x > 0 else 0.98
+    # Depressão oblíqua: desce (-Z), retrai sutilmente no sulco (+Y) e abre ligeiramente lateral (+X)
+    disp_x = math.copysign((0.0016 * w_corner) * asym, p.x)
+    disp_y = (0.0022 * w_corner + 0.0012 * w_dao) * asym
+    disp_z = (-0.0068 * w_corner - 0.0040 * w_lower - 0.0025 * w_dao) * asym
+    return p + Vector((disp_x, disp_y, disp_z))
+
+def nose_wrinkle(i, p):
+    if i in interior_kinds or i in eyeball_verts or i in lashes or i in hair or p.y > -0.18 or p.z < 3.36:
+        return None
+
+    if not (3.37 < p.z < 3.52 and abs(p.x) < 0.048 and p.y < -0.20):
+        return None
+
+    ax = abs(p.x)
+    # Dorso nasal central (Procerus / Nasalis transversa AU9)
+    w_dorsum = math.exp(-(ax ** 2) / (2 * (0.015 ** 2))) * smoothstep(3.40, 3.46, p.z) * (1.0 - smoothstep(3.48, 3.52, p.z))
+
+    # Asas nasais e sulco alar (Levator labii superioris alaeque nasi)
+    w_ala = 0.0
+    if 0.012 < ax < 0.042 and 3.37 < p.z < 3.44:
+        w_ala = math.sin(smoothstep(0.012, 0.042, ax) * math.pi) * math.sin(smoothstep(3.37, 3.44, p.z) * math.pi)
+
+    # Sulco infraorbital medial
+    w_sulcus = 0.0
+    if 0.018 < ax < 0.048 and 3.44 < p.z < 3.50:
+        w_sulcus = (1.0 - smoothstep(0.018, 0.048, ax)) * smoothstep(3.44, 3.50, p.z)
+
+    w = max(w_dorsum, w_ala * 0.85, w_sulcus * 0.65)
+    if w <= 0.001:
+        return None
+
+    asym = 1.02 if p.x > 0 else 0.98
+    # Enrugamento: elevação (+Z), dilatação alar (+X) e dobra da raiz (-Y)
+    disp_x = math.copysign(0.0015 * w_ala * asym, p.x)
+    disp_y = (-0.0020 * w_dorsum - 0.0008 * w_ala) * asym
+    disp_z = (0.0048 * w_dorsum + 0.0038 * w_ala + 0.0025 * w_sulcus) * asym
+    return p + Vector((disp_x, disp_y, disp_z))
+
+def chin_raise(i, p):
+    # Proteção estrita do corpo: Z >= 3.245
+    if i in interior_kinds or i in eyeball_verts or i in lashes or i in hair or p.z < 3.245:
+        return None
+
+    ax = abs(p.x)
+    if ax > 0.055 or p.y > -0.19:
+        return None
+
+    # Coxim do queixo (Mentalis AU17, Z entre 3.245 e 3.325)
+    w_mentalis = 0.0
+    if 3.245 <= p.z < 3.325 and ax < 0.045:
+        w_mentalis = smoothstep(3.245, 3.285, p.z) * (1.0 - smoothstep(3.305, 3.325, p.z)) * (1.0 - (ax / 0.045) ** 2)
+
+    # Lábio inferior sendo empurrado para cima pelo queixo
+    w_lower_lip = 0.0
+    if i in lower_indices and 3.325 <= p.z < 3.3565 and ax < 0.040 and p.y < -0.210:
+        w_lower_lip = (1.0 - (ax / 0.040) ** 2) * smoothstep(3.325, 3.3565, p.z)
+
+    if w_mentalis <= 0.001 and w_lower_lip <= 0.001:
+        return None
+
+    # Mentalis eleva o queixo (+Z), projeta-o ligeiramente anterior (-Y) e comprime a linha mediana
+    disp_x = -math.copysign(0.0010 * w_mentalis * smoothstep(0.0, 0.025, ax), p.x)
+    disp_y = (-0.0024 * w_mentalis - 0.0015 * w_lower_lip)
+    disp_z = (0.0048 * w_mentalis + 0.0035 * w_lower_lip)
+    return p + Vector((disp_x, disp_y, disp_z))
+
+def cheek_compress(i, p):
+    if i in interior_kinds or i in eyeball_verts or i in lashes or i in hair or p.y > -0.16 or p.z < 3.28:
+        return None
+
+    ax = abs(p.x)
+    # Região do músculo bucinador e modíolo AU14 (ax entre 0.038 e 0.085, Z entre 3.31 e 3.44)
+    if not (0.038 < ax < 0.085 and 3.31 < p.z < 3.44 and -0.23 < p.y < -0.17):
+        return None
+
+    d_bucc = math.sqrt(((ax - 0.060) / 0.024) ** 2 +
+                       ((p.y - (-0.200)) / 0.025) ** 2 +
+                       ((p.z - 3.365) / 0.032) ** 2)
+    w_bucc = 1.0 - smoothstep(0.0, 1.0, d_bucc)
+
+    d_mod = math.sqrt(((ax - MOUTH_CORNER_X) / 0.020) ** 2 +
+                      ((p.y - MOUTH_CORNER_Y) / 0.020) ** 2 +
+                      ((p.z - MOUTH_CORNER_Z) / 0.020) ** 2)
+    w_mod = 1.0 - smoothstep(0.0, 1.0, d_mod)
+
+    w = max(w_bucc, w_mod * 0.70)
+    if w <= 0.001:
+        return None
+
+    asym = 1.02 if p.x > 0 else 0.98
+    # Compressão do bucinador contra os molares: retração posterior (+Y), medialização das bochechas (-|X|)
+    disp_x = -math.copysign((0.0032 * w_bucc + 0.0018 * w_mod) * asym, p.x)
+    disp_y = (0.0030 * w_bucc + 0.0022 * w_mod) * asym
+    disp_z = ((3.365 - p.z) * 0.10 * w) * asym
+    return p + Vector((disp_x, disp_y, disp_z))
+
 add_key("JawOpen", jaw)
 add_key("MouthPucker", pucker)
 add_key("MouthWide", wide)
@@ -537,6 +694,11 @@ add_key("BrowUp", brow_up)
 add_key("BrowDown", brow_down)
 add_key("Smile", smile)
 add_key("Squint", squint)
+add_key("BrowInnerUp", brow_inner_up)
+add_key("MouthFrown", mouth_frown)
+add_key("NoseWrinkle", nose_wrinkle)
+add_key("ChinRaise", chin_raise)
+add_key("CheekCompress", cheek_compress)
 
 # 5. EXPORTAR FBX FINAL
 bpy.ops.export_scene.fbx(

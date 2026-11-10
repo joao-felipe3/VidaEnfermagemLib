@@ -69,6 +69,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face")
 	FName SquintMorph = TEXT("Squint");
 
+	// Morph targets de musculatura facial anatômica (FACS AU)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face")
+	FName BrowInnerUpMorph = TEXT("BrowInnerUp");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face")
+	FName MouthFrownMorph = TEXT("MouthFrown");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face")
+	FName NoseWrinkleMorph = TEXT("NoseWrinkle");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face")
+	FName ChinRaiseMorph = TEXT("ChinRaise");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face")
+	FName CheekCompressMorph = TEXT("CheekCompress");
+
 	// Morph targets de rotação dos olhos (para rigs sem ossos de olho como Mixamo)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Face")
 	FName EyeLookLeftMorph = TEXT("EyeLookLeft");
@@ -105,6 +121,10 @@ public:
 	// Força uma expressão por alguns segundos (ex.: BrowDown 0.8 ao ver a agulha). 0..1 cada
 	UFUNCTION(BlueprintCallable, Category = "Face")
 	void SetExpression(float Smile, float BrowUp, float BrowDown, float Duration = 2.0f);
+
+	// Força uma reação clínica específica (dor aguda/punção, preocupação/ansiedade, dúvida/hesitação). 0..1 cada
+	UFUNCTION(BlueprintCallable, Category = "Face")
+	void SetClinicalReaction(float InPain, float InConcern, float InHesitation, float Duration = 2.0f);
 
 	// Pisca agora (ex.: ao ser surpreendido)
 	UFUNCTION(BlueprintCallable, Category = "Face")
@@ -143,10 +163,20 @@ private:
 	float GreetTime = -1.0f;      // tempo desde que o estudante chegou perto
 	float ExpressionTime = 0.0f;  // segundos restantes da expressão forçada
 	FVector ForcedExpression = FVector::ZeroVector;  // Smile, BrowUp, BrowDown
+	float ClinicalReactionTime = 0.0f;
+	float ForcedPain = 0.0f;
+	float ForcedConcern = 0.0f;
+	float ForcedHesitation = 0.0f;
+
 	float Smile = 0.0f;
 	float BrowUp = 0.0f;
 	float BrowDown = 0.0f;
 	float Squint = 0.0f;
+	float BrowInnerUp = 0.0f;
+	float MouthFrown = 0.0f;
+	float NoseWrinkle = 0.0f;
+	float ChinRaise = 0.0f;
+	float CheekCompress = 0.0f;
 	float SpeechPeak = 0.0f;
 	float SpeechActivity = 0.0f;
 	bool bWasSpeaking = false;

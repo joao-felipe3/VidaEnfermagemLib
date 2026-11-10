@@ -277,14 +277,22 @@ void UPatientVoiceComponent::GetShapeWeights(TCHAR Shape, float OutWeights[NumCh
 	// Peso de JawOpen, MouthPucker, MouthWide, LowerLipIn, LipsPress, UpperLipUp e TongueUp para cada
 	// forma do Rhubarb: A = M/B/P, B = K/S/T/I, C = E, D = A, E = O, F = U/W, G = F/V, H = L, X = repouso
 	static const TMap<TCHAR, TArray<float>> Shapes = {
-		{ TEXT('A'), { 0.00f, 0.00f, 0.00f, 0.00f, 0.75f, 0.00f, 0.00f } },
-		{ TEXT('B'), { 0.18f, 0.00f, 0.18f, 0.00f, 0.00f, 0.08f, 0.12f } },
-		{ TEXT('C'), { 0.50f, 0.00f, 0.18f, 0.00f, 0.00f, 0.06f, 0.00f } },
-		{ TEXT('D'), { 0.85f, 0.00f, 0.06f, 0.00f, 0.00f, 0.06f, 0.00f } },
-		{ TEXT('E'), { 0.50f, 0.40f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
-		{ TEXT('F'), { 0.22f, 0.70f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
-		{ TEXT('G'), { 0.14f, 0.00f, 0.06f, 0.70f, 0.00f, 0.10f, 0.00f } },
-		{ TEXT('H'), { 0.50f, 0.00f, 0.06f, 0.00f, 0.00f, 0.06f, 0.65f } },
+		// A = M/B/P (oclusiva bilabial: lábios selados com pressão firme)
+		{ TEXT('A'), { 0.00f, 0.00f, 0.00f, 0.00f, 0.85f, 0.00f, 0.00f } },
+		// B = K/S/T/I (dental/alveolar e semivogais: dentes próximos, leve abertura lateral)
+		{ TEXT('B'), { 0.16f, 0.00f, 0.24f, 0.00f, 0.00f, 0.10f, 0.15f } },
+		// C = E / Ê / É (vogal média não-arredondada: boca alargada, abertura média)
+		{ TEXT('C'), { 0.42f, 0.00f, 0.32f, 0.00f, 0.00f, 0.10f, 0.00f } },
+		// D = A / Á (vogal aberta: abertura ampla e natural da mandíbula)
+		{ TEXT('D'), { 0.70f, 0.00f, 0.14f, 0.00f, 0.00f, 0.08f, 0.00f } },
+		// E = O / Ó (vogal posterior média arredondada: formato oval/arredondado)
+		{ TEXT('E'), { 0.42f, 0.55f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
+		// F = U / W (vogal posterior fechada arredondada: bico labial estreito)
+		{ TEXT('F'), { 0.20f, 0.80f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f } },
+		// G = F / V (fricativa labiodental: lábio inferior toca incisivos superiores)
+		{ TEXT('G'), { 0.12f, 0.00f, 0.08f, 0.75f, 0.00f, 0.18f, 0.00f } },
+		// H = L / R / LH (líquida alveolar: ponta da língua claramente elevada)
+		{ TEXT('H'), { 0.38f, 0.00f, 0.12f, 0.00f, 0.00f, 0.08f, 0.75f } },
 	};
 
 	const TArray<float>* Weights = Shapes.Find(Shape);
@@ -320,15 +328,15 @@ void UPatientVoiceComponent::UpdateVisemeTarget()
 		Weight *= Cue.Scale;
 	}
 
-	// Coarticulação: transição sigmoidal suave (SmoothStep) entre fonemas consecutivos
+	// Coarticulação: transição suave e contínua (S-Curve) entre fonemas consecutivos
 	if (CueIndex + 1 < Cues.Num() && CoarticulationTime > 0.0f)
 	{
 		const FVisemeCue& Next = Cues[CueIndex + 1];
 		const float Remaining = Next.Time - VisemeTime;
-		if (Remaining < CoarticulationTime)
+		if (Remaining < CoarticulationTime && Remaining > 0.0f)
 		{
-			const float LinearAlpha = 1.0f - Remaining / CoarticulationTime;
-			const float SmoothAlpha = 0.5f * FMath::SmoothStep(0.0f, 1.0f, LinearAlpha);
+			const float LinearAlpha = 1.0f - (Remaining / CoarticulationTime);
+			const float SmoothAlpha = FMath::SmoothStep(0.0f, 1.0f, LinearAlpha);
 			float NextWeights[NumChannels];
 			GetShapeWeights(Next.Shape, NextWeights);
 			for (int32 Channel = 0; Channel < NumChannels; ++Channel)
@@ -353,7 +361,12 @@ void UPatientVoiceComponent::HandleEnvelope(const USoundWave* PlayingSoundWave, 
 	Envelope = EnvelopeValue;
 	if (Cues.Num() == 0 && IsSpeaking())
 	{
-		TargetMouth[Jaw] = FMath::Clamp(EnvelopeValue * EnvelopeGain * JawScale, 0.0f, 1.0f) * MouthIntensity;
+		const float Loudness = FMath::Clamp(EnvelopeValue * EnvelopeGain * JawScale, 0.0f, 1.0f) * MouthIntensity;
+		TargetMouth[Jaw] = Loudness;
+		// Modulação procedural orgânica: adiciona leve abertura lateral nas vogais e arredondamento rítmico
+		const float SyllableCycle = FMath::Sin(SpeechTime * 14.0f);
+		TargetMouth[Wide] = Loudness * FMath::Clamp(SyllableCycle * 0.35f, 0.0f, 0.30f);
+		TargetMouth[Pucker] = Loudness * FMath::Clamp(-SyllableCycle * 0.25f, 0.0f, 0.25f);
 	}
 }
 

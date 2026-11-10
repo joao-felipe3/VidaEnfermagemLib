@@ -51,6 +51,11 @@ for k in keys[1:]:
     biometria[k.name] = (max_d * 1000.0, dx_max * 1000.0, dy_max * 1000.0, dz_max * 1000.0)
     print(f"  * {k.name:15}: Max={max_d*1000.0:6.2f} mm | dX={dx_max*1000.0:6.2f} mm | dY={dy_max*1000.0:6.2f} mm | dZ={dz_max*1000.0:6.2f} mm")
 
+# Zera todos os pesos inicialmente (FBX importa com peso 1.0)
+for k in keys[1:]:
+    k.value = 0.0
+bpy.context.view_layer.update()
+
 # 2. Configura cena e estúdio de renderização
 scene = bpy.context.scene
 scene.render.engine = "BLENDER_WORKBENCH"
@@ -226,6 +231,38 @@ estados = {
         "BrowUp": 0.15,
         "Squint": 0.10,
     },
+    # NOVOS ESTADOS CLÍNICOS E MUSCULARES FACS
+    "17_expressao_preocupacao_dor": {
+        # Elevação medial das sobrancelhas + rebaixamento das comissuras labiais
+        "BrowInnerUp": 0.80,
+        "BrowDown": 0.30,
+        "MouthFrown": 0.65,
+        "Squint": 0.35,
+    },
+    "18_expressao_dor_aguda_puncao": {
+        # Enrugamento nasal intenso (AU9) + corrugador + contração periocular na punção venosa
+        "BrowDown": 0.70,
+        "BrowInnerUp": 0.40,
+        "NoseWrinkle": 0.85,
+        "Squint": 0.75,
+        "MouthFrown": 0.45,
+        "LipsPress": 0.35,
+    },
+    "19_expressao_duvida_hesitacao": {
+        # Elevação/enrugamento do queixo (AU17 Mentalis) + sustentação do bucinador + elevação medial
+        "BrowInnerUp": 0.65,
+        "ChinRaise": 0.80,
+        "MouthFrown": 0.30,
+        "CheekCompress": 0.45,
+        "EyeLookUp": 0.30,
+    },
+    "20_expressao_tensao_bucal_modiolo": {
+        # Contração do bucinador e modíolo (AU14) sustentando o volume orofacial
+        "CheekCompress": 0.85,
+        "ChinRaise": 0.40,
+        "LipsPress": 0.50,
+        "Squint": 0.30,
+    },
 }
 
 print(f"\nIniciando renderização de {len(estados)} estados em {len(cameras)} ângulos...")
@@ -235,6 +272,7 @@ for estado_id, morph_weights in estados.items():
     # 1. Aplica pesos
     for k in keys[1:]:
         k.value = morph_weights.get(k.name, 0.0)
+    bpy.context.view_layer.update()
     
     # 2. Renderiza em cada câmera
     for cam_name, cam_obj in cam_objects.items():

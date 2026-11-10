@@ -74,6 +74,14 @@ void UPatientLookAtComponent::SetExpression(float InSmile, float InBrowUp, float
 	ExpressionTime = Duration;
 }
 
+void UPatientLookAtComponent::SetClinicalReaction(float InPain, float InConcern, float InHesitation, float Duration)
+{
+	ForcedPain = FMath::Clamp(InPain, 0.0f, 1.0f);
+	ForcedConcern = FMath::Clamp(InConcern, 0.0f, 1.0f);
+	ForcedHesitation = FMath::Clamp(InHesitation, 0.0f, 1.0f);
+	ClinicalReactionTime = Duration;
+}
+
 void UPatientLookAtComponent::Blink()
 {
 	if (BlinkTime < 0.0f)
@@ -229,7 +237,59 @@ void UPatientLookAtComponent::UpdateFace(float DeltaTime, bool bSpeaking, float 
 	const float WantedSquint = FMath::Clamp(BaseAttentiveSquint + SmileDuchenneSquint + SpeechSquint + ConcernSquint, 0.0f, 0.85f);
 	Squint = FMath::FInterpTo(Squint, WantedSquint, DeltaTime, 6.0f);
 
-	// 5. GAZE-EYELID SYNERGY (Inervação óculo-palpebral fisiológica de Hering):
+	// 5. ATUALIZAÇÃO DAS REAÇÕES CLÍNICAS (DOR, PREOCUPAÇÃO, HESITAÇÃO)
+	if (ClinicalReactionTime > 0.0f)
+	{
+		ClinicalReactionTime -= DeltaTime;
+	}
+	else
+	{
+		ForcedPain = FMath::FInterpTo(ForcedPain, 0.0f, DeltaTime, 3.0f);
+		ForcedConcern = FMath::FInterpTo(ForcedConcern, 0.0f, DeltaTime, 3.0f);
+		ForcedHesitation = FMath::FInterpTo(ForcedHesitation, 0.0f, DeltaTime, 3.0f);
+	}
+
+	// 6. SOBRANCELHA MEDIAL / BROW INNER UP (AU1 Frontalis pars medialis):
+	// - Elevação da ponta interna: vulnerabilidade, preocupação clínica, empatia ou dor
+	const float IdleBrowInnerUp = 0.50f * BaseConcernAdjusted + 0.35f * IdleAttentiveLift;
+	const float SpeechBrowInnerUp = 0.12f * SpeechActivity + 0.18f * SpeechPeak;
+	const float ClinicalBrowInnerUp = 0.85f * ForcedConcern + 0.45f * ForcedPain;
+	const float WantedBrowInnerUp = FMath::Clamp(FMath::Max(IdleBrowInnerUp, SpeechBrowInnerUp) + ClinicalBrowInnerUp, 0.0f, 0.90f);
+
+	// 7. COMISSURA LABIAL / MOUTH FROWN (AU15 Depressor anguli oris):
+	// - Rebaixamento dos cantos da boca: tristeza, dor, desânimo ou incerteza
+	const float FrownSmileInhibition = FMath::Clamp(1.0f - WantedSmile * 2.2f, 0.0f, 1.0f);
+	const float ClinicalFrown = (0.65f * ForcedPain + 0.45f * ForcedConcern) * FrownSmileInhibition;
+	const float ForcedBrowDownFrown = (ExpressionTime > 0.0f && ForcedExpression.Z > 0.35f) ? (ForcedExpression.Z - 0.35f) * 0.50f : 0.0f;
+	const float WantedMouthFrown = FMath::Clamp(ClinicalFrown + ForcedBrowDownFrown, 0.0f, 0.80f);
+
+	// 8. ENRUGAMENTO NASAL / NOSE WRINKLE (AU9 Nasalis pars transversa & Procerus):
+	// - Contração patognomônica de dor aguda (ex: punção venosa na coleta) e aversão
+	const float ClinicalNoseWrinkle = 0.85f * ForcedPain;
+	const float CorrugatorNoseSynergy = (WantedBrowDown > 0.45f) ? (WantedBrowDown - 0.45f) * 0.35f : 0.0f;
+	const float WantedNoseWrinkle = FMath::Clamp(ClinicalNoseWrinkle + CorrugatorNoseSynergy, 0.0f, 0.90f);
+
+	// 9. ELEVAÇÃO DO QUEIXO / CHIN RAISE (AU17 Mentalis):
+	// - Enrugamento do queixo e projeção do lábio inferior: dúvida, hesitação, contenção emocional
+	const float ClinicalChinRaise = 0.80f * ForcedHesitation + 0.25f * ForcedConcern;
+	const float IdleThoughtChin = (ThoughtWave < -0.15f) ? (-ThoughtWave - 0.15f) * 0.25f : 0.0f;
+	const float SpeechChinRaise = 0.10f * SpeechActivity;
+	const float WantedChinRaise = FMath::Clamp(ClinicalChinRaise + IdleThoughtChin + SpeechChinRaise, 0.0f, 0.80f);
+
+	// 10. COMPRESSÃO DAS BOCHECHAS / CHEEK COMPRESS (AU14 Buccinator & Modiolus):
+	// - Tônus bucal ativo: sustentação do volume orofacial na fala, modíolo no sorriso e tensão na hesitação
+	const float SpeechCheekCompress = 0.28f * SpeechActivity + 0.22f * SpeechPeak;
+	const float ClinicalCheekCompress = 0.50f * ForcedHesitation + 0.30f * ForcedPain;
+	const float SmileCheekCompress = 0.20f * WantedSmile;
+	const float WantedCheekCompress = FMath::Clamp(SpeechCheekCompress + ClinicalCheekCompress + SmileCheekCompress, 0.0f, 0.85f);
+
+	BrowInnerUp = FMath::FInterpTo(BrowInnerUp, WantedBrowInnerUp, DeltaTime, 7.0f);
+	MouthFrown = FMath::FInterpTo(MouthFrown, WantedMouthFrown, DeltaTime, 5.0f);
+	NoseWrinkle = FMath::FInterpTo(NoseWrinkle, WantedNoseWrinkle, DeltaTime, 8.0f);
+	ChinRaise = FMath::FInterpTo(ChinRaise, WantedChinRaise, DeltaTime, 6.0f);
+	CheekCompress = FMath::FInterpTo(CheekCompress, WantedCheekCompress, DeltaTime, 6.0f);
+
+	// 11. GAZE-EYELID SYNERGY (Inervação óculo-palpebral fisiológica de Hering):
 	// Quando os olhos olham para baixo (NormPitch < 0), a pálpebra superior desce suavemente para acompanhar a córnea
 	// Isso impede 100% de exposição artificial da esclera superior ("olhar arregalado/esbugalhado")
 	float GazeLidFollow = 0.0f;
@@ -249,7 +309,12 @@ void UPatientLookAtComponent::UpdateFace(float DeltaTime, bool bSpeaking, float 
 		{ BrowUpMorph, BrowUp },
 		{ BrowDownMorph, BrowDown },
 		{ SmileMorph, Smile },
-		{ SquintMorph, Squint }
+		{ SquintMorph, Squint },
+		{ BrowInnerUpMorph, BrowInnerUp },
+		{ MouthFrownMorph, MouthFrown },
+		{ NoseWrinkleMorph, NoseWrinkle },
+		{ ChinRaiseMorph, ChinRaise },
+		{ CheekCompressMorph, CheekCompress }
 	};
 	for (const TPair<FName, float>& Morph : Morphs)
 	{

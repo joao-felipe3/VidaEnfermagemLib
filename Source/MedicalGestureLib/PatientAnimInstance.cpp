@@ -15,6 +15,8 @@ namespace
 	const FName HeadBone = TEXT("Head");
 	const FName LeftEyeBone = TEXT("LeftEye");
 	const FName RightEyeBone = TEXT("RightEye");
+	const FName LeftShoulderBone = TEXT("LeftShoulder");
+	const FName RightShoulderBone = TEXT("RightShoulder");
 
 	// Giro simples (Yaw e Pitch)
 	FQuat LookDelta(float YawDeg, float PitchDeg, const FVector& Right)
@@ -140,6 +142,8 @@ void FPatientAnimInstanceProxy::ApplyLook(FPoseContext& Output)
 	const FCompactPoseBoneIndex Head = Index(HeadBone);
 	const FCompactPoseBoneIndex LeftEye = Index(LeftEyeBone);
 	const FCompactPoseBoneIndex RightEye = Index(RightEyeBone);
+	const FCompactPoseBoneIndex LeftShoulder = Index(LeftShoulderBone);
+	const FCompactPoseBoneIndex RightShoulder = Index(RightShoulderBone);
 	if (Neck == INDEX_NONE || Head == INDEX_NONE)
 	{
 		return;
@@ -148,27 +152,6 @@ void FPatientAnimInstanceProxy::ApplyLook(FPoseContext& Output)
 
 	FCSPose<FCompactPose> CSPose;
 	CSPose.InitPose(Output.Pose);
-
-	// Respiração torácica sutil (~0.24 Hz, cerca de 14 respirações/min)
-	const float BreathPhase = LifeTime * 1.5f;
-	const float BreathSine = FMath::Sin(BreathPhase);
-	const float BreathCurve = (FMath::Pow((BreathSine + 1.0f) * 0.5f, 1.3f) * 2.0f - 1.0f);
-	const float BreathPitch = BreathCurve * 0.70f;
-	const float BreathZ = (BreathCurve + 1.0f) * 0.15f;
-
-	if (Spine1 != INDEX_NONE && Spine2 != INDEX_NONE)
-	{
-		const FQuat SpineDelta = LookDelta(0.0f, BreathPitch * 0.5f, FVector::RightVector);
-
-		const FQuat Spine1ParentRot = CSPose.GetComponentSpaceTransform(Bones.GetParentBoneIndex(Spine1)).GetRotation();
-		FTransform& Spine1Local = Output.Pose[Spine1];
-		Spine1Local.SetRotation((Spine1ParentRot.Inverse() * SpineDelta * Spine1ParentRot * Spine1Local.GetRotation()).GetNormalized());
-
-		const FQuat Spine2ParentRot = CSPose.GetComponentSpaceTransform(Bones.GetParentBoneIndex(Spine2)).GetRotation();
-		FTransform& Spine2Local = Output.Pose[Spine2];
-		Spine2Local.SetRotation((Spine2ParentRot.Inverse() * SpineDelta * Spine2ParentRot * Spine2Local.GetRotation()).GetNormalized());
-		Spine2Local.AddToTranslation(FVector(0.0f, 0.0f, BreathZ));
-	}
 
 	const FTransform HeadCS = CSPose.GetComponentSpaceTransform(Head);
 	const FTransform NeckCS = CSPose.GetComponentSpaceTransform(Neck);
@@ -184,6 +167,60 @@ void FPatientAnimInstanceProxy::ApplyLook(FPoseContext& Output)
 		return;
 	}
 	const FVector Right = FVector::CrossProduct(Forward, FVector::UpVector);
+
+	// 1. RESPIRAÇÃO TORÁCICA E CLAVICULAR (~0.23 Hz, ~14 rpm com suspiros periódicos)
+	const float BreathPhase = LifeTime * 1.45f;
+	const float BreathSine = FMath::Sin(BreathPhase);
+	const float BreathNorm = (BreathSine + 1.0f) * 0.5f;
+	const float BreathCurve = FMath::Pow(BreathNorm, 1.4f) * 2.0f - 1.0f;
+
+	// Suspiro profundo periódico (a cada ~28 segundos)
+	const float SighCycle = FMath::Sin(LifeTime * 0.22f);
+	const float SighFactor = (SighCycle > 0.82f) ? (1.0f + 0.95f * (SighCycle - 0.82f) / 0.18f) : 1.0f;
+
+	// 2. REAJUSTE POSTURAL LENTO (Micro-shift de peso na cadeira a cada 30-45s para eliminar postura congelada)
+	const float PosturePhase = LifeTime * 0.08f;
+	const float PostureRoll = 0.55f * FMath::Sin(PosturePhase) * FMath::Cos(PosturePhase * 0.6f);
+	const float PosturePitch = 0.40f * FMath::Sin(PosturePhase * 0.7f + 0.8f);
+
+	// 3. GESTOS CLAVICULARES CONVERSACIONAIS (Micro-elevação de ombros em ênfase de fala)
+	const float SpeechShrug = FMath::Clamp(Speech * 0.9f, 0.0f, 1.0f) * (0.45f + 0.25f * FMath::Sin(LifeTime * 3.8f));
+
+	const float TotalSpinePitch = (BreathCurve * 0.85f * SighFactor) + PosturePitch;
+	const float TotalSpineRoll = PostureRoll;
+	const float TotalBreathZ = ((BreathCurve + 1.0f) * 0.22f * SighFactor) + (SpeechShrug * 0.20f);
+
+	if (Spine1 != INDEX_NONE && Spine2 != INDEX_NONE)
+	{
+		const FQuat SpineDelta = LookDelta(0.0f, TotalSpinePitch * 0.5f, TotalSpineRoll * 0.5f, Forward, Right);
+
+		const FQuat Spine1ParentRot = CSPose.GetComponentSpaceTransform(Bones.GetParentBoneIndex(Spine1)).GetRotation();
+		FTransform& Spine1Local = Output.Pose[Spine1];
+		Spine1Local.SetRotation((Spine1ParentRot.Inverse() * SpineDelta * Spine1ParentRot * Spine1Local.GetRotation()).GetNormalized());
+
+		const FQuat Spine2ParentRot = CSPose.GetComponentSpaceTransform(Bones.GetParentBoneIndex(Spine2)).GetRotation();
+		FTransform& Spine2Local = Output.Pose[Spine2];
+		Spine2Local.SetRotation((Spine2ParentRot.Inverse() * SpineDelta * Spine2ParentRot * Spine2Local.GetRotation()).GetNormalized());
+		Spine2Local.AddToTranslation(Spine2ParentRot.Inverse().RotateVector(FVector(0.0f, 0.0f, TotalBreathZ)));
+	}
+
+	if (LeftShoulder != INDEX_NONE && RightShoulder != INDEX_NONE)
+	{
+		const float ShoulderLiftZ = ((BreathCurve + 1.0f) * 0.16f * SighFactor) + (SpeechShrug * 0.22f);
+		const float ClaviclePitch = (BreathCurve * 0.60f * SighFactor) + (SpeechShrug * 0.75f);
+
+		const FQuat LeftShoulderParentRot = CSPose.GetComponentSpaceTransform(Bones.GetParentBoneIndex(LeftShoulder)).GetRotation();
+		FTransform& LeftShoulderLocal = Output.Pose[LeftShoulder];
+		const FQuat ShoulderDeltaL = LookDelta(0.0f, ClaviclePitch * 0.6f, Right);
+		LeftShoulderLocal.SetRotation((LeftShoulderParentRot.Inverse() * ShoulderDeltaL * LeftShoulderParentRot * LeftShoulderLocal.GetRotation()).GetNormalized());
+		LeftShoulderLocal.AddToTranslation(LeftShoulderParentRot.Inverse().RotateVector(FVector(0.0f, 0.0f, ShoulderLiftZ)));
+
+		const FQuat RightShoulderParentRot = CSPose.GetComponentSpaceTransform(Bones.GetParentBoneIndex(RightShoulder)).GetRotation();
+		FTransform& RightShoulderLocal = Output.Pose[RightShoulder];
+		const FQuat ShoulderDeltaR = LookDelta(0.0f, ClaviclePitch * 0.6f, Right);
+		RightShoulderLocal.SetRotation((RightShoulderParentRot.Inverse() * ShoulderDeltaR * RightShoulderParentRot * RightShoulderLocal.GetRotation()).GetNormalized());
+		RightShoulderLocal.AddToTranslation(RightShoulderParentRot.Inverse().RotateVector(FVector(0.0f, 0.0f, ShoulderLiftZ)));
+	}
 
 	// Ângulos até o alvo; atrás do paciente ele desiste de olhar
 	const FVector Dir = (TargetCS - EyesCS).GetSafeNormal();
