@@ -178,6 +178,22 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Voice Evaluation|State")
 	bool bIsServerAwake = false;
 
+	// Se verdadeiro, habilita atalho de teclado para Push-to-Talk (útil para testes em desktop)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice Evaluation|Input")
+	bool bEnableKeyboardPushToTalk = true;
+
+	// Tecla para Push-to-Talk (padrão: V)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voice Evaluation|Input")
+	FKey PushToTalkKey = EKeys::V;
+
+	UFUNCTION()
+	void OnKeyboardPushToTalkPressed();
+
+	UFUNCTION()
+	void OnKeyboardPushToTalkReleased();
+
+	void SetupKeyboardInput();
+
 	// Nível atual de volume do microfone (0.0 a 1.0) para medidores em VR
 	UPROPERTY(BlueprintReadOnly, Category = "Voice Evaluation|State")
 	float MicInputLevel = 0.0f;
@@ -214,6 +230,14 @@ public:
 	// Cancela a gravação atual sem enviar nada para a API
 	UFUNCTION(BlueprintCallable, Category = "Voice Evaluation")
 	void CancelRecording();
+
+	// Avança o visual do BP_Quiz se presente na cena
+	UFUNCTION(BlueprintCallable, Category = "Voice Evaluation|Flow")
+	void AdvanceQuizWidgetVisual();
+
+	// Finaliza a etapa de diálogo no Storyteller (chama AnswersEnded no BP_Dialogue_Step)
+	UFUNCTION(BlueprintCallable, Category = "Voice Evaluation|Flow")
+	void CompleteClinicalDialogueStep();
 
 	// Envia um texto diretamente para a API (útil para testes em Desktop ou sem microfone)
 	UFUNCTION(BlueprintCallable, Category = "Voice Evaluation")
@@ -262,4 +286,6 @@ private:
 
 	double HealthPingStartTime = 0.0;
 	double EvaluationStartTime = 0.0;
+	bool bWasPushToTalkKeyDown = false;
 };
+
