@@ -93,3 +93,4 @@ if __name__ == "__main__":
     
     for q_id, fala in testes:
         test_evaluation("coleta-sangue", q_id, fala)
+

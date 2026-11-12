@@ -70,3 +70,4 @@ O componente está adicionado diretamente ao blueprint do paciente (`BP_Patient`
 Para testar a API diretamente sem abrir o editor:
 1. Dê duplo clique em `Tools/VoiceEval/testar_api.bat`.
 2. O script testará o endpoint `/health`, listará os cenários e simulará as 4 perguntas principais com transcrições reais.
+
