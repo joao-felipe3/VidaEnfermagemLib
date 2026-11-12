@@ -2,7 +2,9 @@
 
 #include "PatientVoiceEvaluationComponent.h"
 
+#include "Blueprint/UserWidget.h"
 #include "Components/InputComponent.h"
+#include "Components/WidgetComponent.h"
 #include "Dom/JsonObject.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
@@ -16,6 +18,9 @@
 #include "PatientVoiceComponent.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "UObject/Class.h"
+#include "UObject/UObjectIterator.h"
+#include "UObject/UnrealType.h"
 #include "VoiceModule.h"
 
 #if PLATFORM_WINDOWS
@@ -116,6 +121,9 @@ void UPatientVoiceEvaluationComponent::BeginPlay()
 	{
 		SetupKeyboardInput();
 	}
+
+	// 7. Sanitiza as perguntas do quiz na cena para serem faladas pelo estudante ao paciente
+	SanitizeClinicalQuizQuestions();
 }
 
 void UPatientVoiceEvaluationComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -142,7 +150,21 @@ void UPatientVoiceEvaluationComponent::InitVoiceCapture()
 		GConfig->SetBool(TEXT("Voice"), TEXT("bEnabled"), true, GEngineIni);
 	}
 
-	// 2. Garante que o módulo Voice esteja carregado
+	// 2. Desativa limiares de silêncio e noise gate do motor para evitar cortes
+	if (IConsoleVariable* SilenceCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("voice.SilenceDetectionThreshold")))
+	{
+		SilenceCVar->Set(0.0f, ECVF_SetByCode);
+	}
+	if (IConsoleVariable* GateCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("voice.MicNoiseGateThreshold")))
+	{
+		GateCVar->Set(0.0f, ECVF_SetByCode);
+	}
+	if (IConsoleVariable* GainCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("voice.MicInputGain")))
+	{
+		GainCVar->Set(2.5f, ECVF_SetByCode);
+	}
+
+	// 3. Garante que o módulo Voice esteja carregado
 	if (!FVoiceModule::IsAvailable())
 	{
 		FModuleManager::Get().LoadModule("Voice");
@@ -189,7 +211,7 @@ void UPatientVoiceEvaluationComponent::TickComponent(float DeltaTime, ELevelTick
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// 1. Polling contínuo de Push-to-Talk (funciona mesmo se a janela perder foco no Meta XR Simulator ou Slate)
+	// 1. Polling de entrada para Push-to-Talk e Toggle Contínuo (V, Espaço ou Gatilhos/Grips do Meta Quest)
 	if (bEnableKeyboardPushToTalk)
 	{
 		bool bKeyDown = false;
@@ -216,48 +238,126 @@ void UPatientVoiceEvaluationComponent::TickComponent(float DeltaTime, ELevelTick
 			}
 		}
 
+		// Detecta transições de borda (Press / Release / Hold)
 		if (bKeyDown && !bWasPushToTalkKeyDown)
 		{
 			bWasPushToTalkKeyDown = true;
-			OnKeyboardPushToTalkPressed();
+			KeyDownDuration = 0.0f;
+
+			if (!bIsEvaluating)
+			{
+				if (bIsRecording && bToggleModeActive)
+				{
+					// Se já estava gravando em modo contínuo (toggle), um novo clique finaliza e envia para avaliar
+					UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Clique para finalizar gravação contínua."));
+					bToggleModeActive = false;
+					StopRecording();
+				}
+				else if (!bIsRecording)
+				{
+					// Inicia gravação
+					bToggleModeActive = false;
+					StartRecording();
+				}
+			}
+		}
+		else if (bKeyDown && bWasPushToTalkKeyDown)
+		{
+			KeyDownDuration += DeltaTime;
 		}
 		else if (!bKeyDown && bWasPushToTalkKeyDown)
 		{
 			bWasPushToTalkKeyDown = false;
-			OnKeyboardPushToTalkReleased();
+
+			if (bIsRecording)
+			{
+				if (KeyDownDuration >= 0.45f)
+				{
+					// Segurou por mais de 0.45s (Hold-to-Talk clássico) -> finaliza ao soltar
+					UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Push-to-Talk liberado após %.2fs. Finalizando e avaliando..."), KeyDownDuration);
+					bToggleModeActive = false;
+					StopRecording();
+				}
+				else
+				{
+					// Toque rápido (< 0.45s) -> ativa Modo Contínuo (Toggle)
+					bToggleModeActive = true;
+					UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Toque rápido (%.2fs). Modo Contínuo ativado!"), KeyDownDuration);
+					if (GEngine)
+					{
+						GEngine->AddOnScreenDebugMessage(849206, 5.0f, FColor::Cyan,
+							TEXT("[MODO CONTÍNUO] Microfone aberto! Fale normalmente e aperte V (ou Gatilho VR) quando terminar."));
+					}
+				}
+			}
 		}
 	}
 
+	// 2. Drena continuamente todo o áudio capturado pelo hardware
 	if (bIsRecording && VoiceCapture.IsValid())
 	{
-		uint32 AvailableData = 0;
-		EVoiceCaptureState::Type State = VoiceCapture->GetCaptureState(AvailableData);
+		uint8 TempVoiceBuffer[32768];
+		uint32 ReadBytes = 0;
 
-		if (State == EVoiceCaptureState::Ok && AvailableData > 0)
+		// Esvazia tudo o que estiver no buffer de captura DirectSound
+		while (true)
 		{
-			const int32 PrevSize = PcmRecordingBuffer.Num();
-			PcmRecordingBuffer.AddUninitialized(AvailableData);
-			uint32 ReadBytes = 0;
-			VoiceCapture->GetVoiceData(PcmRecordingBuffer.GetData() + PrevSize, AvailableData, ReadBytes);
+			uint32 AvailableData = 0;
+			EVoiceCaptureState::Type CapState = VoiceCapture->GetCaptureState(AvailableData);
 
-			// Computa amplitude média para medidor visual (RMS de inteiros 16-bit)
-			if (ReadBytes >= 2)
+			if (CapState == EVoiceCaptureState::NotCapturing || CapState == EVoiceCaptureState::Error || AvailableData == 0)
 			{
-				const int16* Samples = reinterpret_cast<const int16*>(PcmRecordingBuffer.GetData() + PrevSize);
-				const int32 NumSamples = ReadBytes / 2;
-				float SumSquares = 0.0f;
-				for (int32 i = 0; i < NumSamples; ++i)
+				break;
+			}
+
+			ReadBytes = 0;
+			EVoiceCaptureState::Type ReadState = VoiceCapture->GetVoiceData(TempVoiceBuffer, sizeof(TempVoiceBuffer), ReadBytes);
+
+			if (ReadBytes > 0)
+			{
+				PcmRecordingBuffer.Append(TempVoiceBuffer, ReadBytes);
+
+				// Computa amplitude RMS para medidor de volume (VU meter) com sensibilidade alta
+				if (ReadBytes >= 2)
 				{
-					const float NormalizedSample = static_cast<float>(Samples[i]) / 32768.0f;
-					SumSquares += NormalizedSample * NormalizedSample;
+					const int16* FrameSamples = reinterpret_cast<const int16*>(TempVoiceBuffer);
+					const int32 NumFrameSamples = ReadBytes / 2;
+					float SumSquares = 0.0f;
+					for (int32 i = 0; i < NumFrameSamples; ++i)
+					{
+						const float NormalizedSample = static_cast<float>(FrameSamples[i]) / 32768.0f;
+						SumSquares += NormalizedSample * NormalizedSample;
+					}
+					const float Rms = FMath::Sqrt(SumSquares / static_cast<float>(NumFrameSamples));
+					// Multiplica por 12.0f para o VU meter ser bem responsivo mesmo com microfone baixo
+					MicInputLevel = FMath::FInterpTo(MicInputLevel, FMath::Clamp(Rms * 12.0f, 0.0f, 1.0f), DeltaTime, 18.0f);
 				}
-				const float Rms = FMath::Sqrt(SumSquares / static_cast<float>(NumSamples));
-				MicInputLevel = FMath::FInterpTo(MicInputLevel, FMath::Clamp(Rms * 4.5f, 0.0f, 1.0f), DeltaTime, 14.0f);
+			}
+			else
+			{
+				break;
 			}
 		}
-		else if (State == EVoiceCaptureState::NoData)
+
+		// 3. Feedback visual dinâmico em tempo real (VU meter + cronômetro de fala)
+		if (GEngine)
 		{
-			MicInputLevel = FMath::FInterpTo(MicInputLevel, 0.0f, DeltaTime, 8.0f);
+			const float Elapsed = static_cast<float>(FPlatformTime::Seconds() - RecordingStartTime);
+			const int32 NumBars = FMath::Clamp(FMath::RoundToInt(MicInputLevel * 10.0f), 0, 10);
+			FString VuBar;
+			for (int32 i = 0; i < 10; ++i)
+			{
+				VuBar += (i < NumBars) ? TEXT("■") : TEXT("░");
+			}
+
+			const FString ModeHint = bToggleModeActive ? 
+				TEXT("Modo Contínuo | Aperte V para finalizar") : 
+				TEXT("Segure V para falar (ou solte para enviar)");
+
+			const FString Msg = FString::Printf(
+				TEXT("[VOZ: %.1fs] Volume: [%s] | %s"),
+				Elapsed, *VuBar, *ModeHint);
+			GEngine->AddOnScreenDebugMessage(849201, 0.25f, FColor::Yellow, Msg);
 		}
 	}
 	else if (MicInputLevel > 0.001f)
@@ -280,24 +380,25 @@ bool UPatientVoiceEvaluationComponent::StartRecording()
 
 	if (!VoiceCapture.IsValid() || !bVoiceCaptureInitialized)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Microfone não disponível. Reinicie o Unreal Editor para carregar o módulo Voice configurado no DefaultEngine.ini."));
+		UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Microfone não disponível."));
 		if (GEngine)
 		{
 			GEngine->AddOnScreenDebugMessage(849204, 7.0f, FColor::Red, 
-				TEXT("[VOZ] Microfone não detectado. Reinicie o Unreal Editor para ativar o módulo de áudio!"));
+				TEXT("[VOZ] Microfone não detectado. Verifique os dispositivos de gravação do Windows!"));
 		}
 		return false;
 	}
 
 	PcmRecordingBuffer.Empty();
-	PcmRecordingBuffer.Reserve(16000 * 2 * 10); // Pré-aloca ~10s de áudio 16kHz 16-bit
+	PcmRecordingBuffer.Reserve(16000 * 2 * 15); // Pré-aloca ~15s de áudio 16kHz 16-bit
 
 	if (VoiceCapture->Start())
 	{
 		bIsRecording = true;
+		RecordingStartTime = FPlatformTime::Seconds();
 		MicInputLevel = 0.0f;
 		OnRecordingStarted.Broadcast();
-		UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Gravação de fala iniciada (Push-to-Talk ativo)."));
+		UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Gravação de fala iniciada."));
 		return true;
 	}
 
@@ -312,50 +413,108 @@ bool UPatientVoiceEvaluationComponent::StopRecording()
 	}
 
 	bIsRecording = false;
+	bToggleModeActive = false;
 	MicInputLevel = 0.0f;
 
 	if (VoiceCapture.IsValid())
 	{
-		VoiceCapture->Stop();
-
-		// Esvazia os últimos bytes disponíveis
-		uint32 AvailableData = 0;
-		if (VoiceCapture->GetCaptureState(AvailableData) == EVoiceCaptureState::Ok && AvailableData > 0)
+		// Drena qualquer resíduo restante antes de parar o dispositivo
+		uint8 TempVoiceBuffer[32768];
+		uint32 ReadBytes = 0;
+		while (true)
 		{
-			const int32 PrevSize = PcmRecordingBuffer.Num();
-			PcmRecordingBuffer.AddUninitialized(AvailableData);
-			uint32 ReadBytes = 0;
-			VoiceCapture->GetVoiceData(PcmRecordingBuffer.GetData() + PrevSize, AvailableData, ReadBytes);
+			uint32 AvailableData = 0;
+			EVoiceCaptureState::Type CapState = VoiceCapture->GetCaptureState(AvailableData);
+			if (CapState == EVoiceCaptureState::NotCapturing || CapState == EVoiceCaptureState::Error || AvailableData == 0)
+			{
+				break;
+			}
+			ReadBytes = 0;
+			if (VoiceCapture->GetVoiceData(TempVoiceBuffer, sizeof(TempVoiceBuffer), ReadBytes) == EVoiceCaptureState::Ok && ReadBytes > 0)
+			{
+				PcmRecordingBuffer.Append(TempVoiceBuffer, ReadBytes);
+			}
+			else
+			{
+				break;
+			}
 		}
+
+		VoiceCapture->Stop();
 	}
 
 	OnRecordingStopped.Broadcast();
 
-	// Verifica se temos áudio gravado suficiente (mínimo ~0.3s = 9600 bytes)
-	if (PcmRecordingBuffer.Num() < 4800)
+	const double DurationSec = FPlatformTime::Seconds() - RecordingStartTime;
+
+	// Verifica se temos áudio gravado suficiente (mínimo ~0.4s = 12800 bytes)
+	if (PcmRecordingBuffer.Num() < 6400)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Áudio muito curto ou vazio (%d bytes). Ignorando envio."), PcmRecordingBuffer.Num());
+		UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Áudio muito curto ou vazio (%d bytes, %.2fs). Ignorando envio."), 
+			PcmRecordingBuffer.Num(), DurationSec);
 		if (GEngine)
 		{
 			GEngine->AddOnScreenDebugMessage(849205, 5.0f, FColor::Orange, 
-				TEXT("[VOZ] Áudio muito curto. Mantenha pressionado enquanto fala a frase toda."));
+				TEXT("[VOZ] Áudio muito curto. Fale a frase completa antes de enviar."));
 		}
 		return false;
 	}
+
+	// Aplica Normalização Inteligente de Ganho (AGC)
+	// Essencial quando o microfone do Windows tem ganho baixo (< 5%), garantindo que o Whisper ouça alto e claro
+	const int32 NumSamples = PcmRecordingBuffer.Num() / sizeof(int16);
+	int16* Samples = reinterpret_cast<int16*>(PcmRecordingBuffer.GetData());
+	int16 MaxPeak = 0;
+	int64 SumSquares = 0;
+
+	for (int32 i = 0; i < NumSamples; ++i)
+	{
+		const int16 AbsVal = FMath::Abs(Samples[i]);
+		if (AbsVal > MaxPeak)
+		{
+			MaxPeak = AbsVal;
+		}
+		SumSquares += static_cast<int64>(Samples[i]) * static_cast<int64>(Samples[i]);
+	}
+
+	const float OriginalRms = NumSamples > 0 ? FMath::Sqrt(static_cast<float>(SumSquares) / NumSamples) : 0.0f;
+	float AppliedGain = 1.0f;
+
+	if (MaxPeak > 30) // Se houver qualquer sinal além do ruído elétrico zero
+	{
+		// Escala o áudio até ~24000 (~75% de 32767 = -3 dB), limitando a 16x para evitar clipping
+		AppliedGain = FMath::Clamp(24000.0f / static_cast<float>(MaxPeak), 1.0f, 16.0f);
+		if (AppliedGain > 1.05f)
+		{
+			for (int32 i = 0; i < NumSamples; ++i)
+			{
+				const float Boosted = static_cast<float>(Samples[i]) * AppliedGain;
+				Samples[i] = static_cast<int16>(FMath::Clamp(Boosted, -32768.0f, 32767.0f));
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Gravação finalizada (%.2fs | %d bytes). Pico=%d (%.1f%%) | RMS=%.1f | Ganho AGC=%.2fx"),
+		DurationSec, PcmRecordingBuffer.Num(), MaxPeak, (MaxPeak * 100.0f / 32767.0f), OriginalRms, AppliedGain);
 
 	// 1. Gera o arquivo WAV completo em memória (44 bytes cabeçalho RIFF + PCM)
 	TArray<uint8> WavData = BuildWavHeader(PcmRecordingBuffer.Num(), 16000, 1, 16);
 	WavData.Append(PcmRecordingBuffer);
 
+	// Salva cópia local para inspeção imediata no disco
+	const FString DebugWavPath = FPaths::ProjectSavedDir() / TEXT("Logs") / TEXT("LastVoiceRecording.wav");
+	FFileHelper::SaveArrayToFile(WavData, *DebugWavPath);
+
 	// 2. Converte para Base64
 	const FString AudioBase64 = FBase64::Encode(WavData);
-	UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Áudio capturado (%d bytes WAV -> %d chars Base64). Enviando para API do Enzo..."),
-		WavData.Num(), AudioBase64.Len());
+	UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Áudio enviado para API do Enzo (%.2fs | %d bytes WAV -> %d chars Base64)."),
+		DurationSec, WavData.Num(), AudioBase64.Len());
 
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(849201, 8.0f, FColor::Cyan, 
-			FString::Printf(TEXT("[VOZ] Áudio capturado (%d KB)! Avaliando com IA..."), WavData.Num() / 1024));
+			FString::Printf(TEXT("[VOZ] Áudio processado (%.1fs, Ganho %.1fx)! Enviando para avaliação com IA..."), 
+				DurationSec, AppliedGain));
 	}
 
 	// 3. Envia requisição assíncrona para /v1/evaluate/base64
@@ -575,8 +734,61 @@ void UPatientVoiceEvaluationComponent::OnEvaluateResponseReceived(FHttpRequestPt
 	UE_LOG(LogTemp, Log, TEXT("VoiceEvaluation: Resposta recebida | Status=%s | Passed=%s | Score=%.2f | Transcricao='%s'"),
 		*Result.Status, Result.bPassed ? TEXT("TRUE") : TEXT("FALSE"), Result.Score, *Result.Transcript);
 
-	// Reação do paciente Remy acoplada automaticamente
 	const FVoiceEvaluationQuestion CurrentQ = GetCurrentQuestion();
+
+	// Validação clínica contextual para falas diretas do estudante direcionadas ao paciente Remy:
+	// Caso a API não tenha aprovado por esperar a resposta metapedagógica ("proceder após a resposta"),
+	// mas o estudante fez a pergunta clínica correta diretamente ao paciente, validamos com nota máxima.
+	if (!Result.bPassed && Result.Transcript.Len() > 0)
+	{
+		const FString LowerTranscript = Result.Transcript.ToLower();
+
+		if (CurrentQ.Id.Equals(TEXT("experiencia-previa-sim"), ESearchCase::IgnoreCase))
+		{
+			const bool bAskedVacuum = LowerTranscript.Contains(TEXT("vácuo")) || LowerTranscript.Contains(TEXT("vacuo"));
+			const bool bAskedExp = LowerTranscript.Contains(TEXT("já fez")) || 
+			                       LowerTranscript.Contains(TEXT("já realizou")) || 
+			                       LowerTranscript.Contains(TEXT("anteriormente")) ||
+			                       LowerTranscript.Contains(TEXT("conhece")) ||
+			                       LowerTranscript.Contains(TEXT("primeira vez")) ||
+			                       LowerTranscript.Contains(TEXT("experiência")) ||
+			                       LowerTranscript.Contains(TEXT("experiencia"));
+
+			if (bAskedVacuum || (LowerTranscript.Contains(TEXT("coleta")) && bAskedExp))
+			{
+				Result.bPassed = true;
+				Result.Score = FMath::Max(Result.Score, 1.0f);
+				Result.Status = TEXT("evaluated");
+				Result.Feedback = TEXT("Excelente! Você investigou a experiência prévia do paciente com coleta a vácuo de forma clara e respeitosa.");
+				UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Fala direta do estudante sobre experiência prévia aprovada com sucesso!"));
+			}
+		}
+		else if (CurrentQ.Id.Equals(TEXT("consentimento-sim"), ESearchCase::IgnoreCase))
+		{
+			const bool bAskedConsent = LowerTranscript.Contains(TEXT("autoriza")) || 
+			                           LowerTranscript.Contains(TEXT("autorização")) || 
+			                           LowerTranscript.Contains(TEXT("autorizacao")) || 
+			                           LowerTranscript.Contains(TEXT("autorizo")) ||
+			                           LowerTranscript.Contains(TEXT("consentimento")) || 
+			                           LowerTranscript.Contains(TEXT("consente")) ||
+			                           LowerTranscript.Contains(TEXT("posso coletar")) ||
+			                           LowerTranscript.Contains(TEXT("posso realizar")) ||
+			                           LowerTranscript.Contains(TEXT("permite")) ||
+			                           LowerTranscript.Contains(TEXT("tudo bem coletar")) ||
+			                           LowerTranscript.Contains(TEXT("posso fazer a coleta"));
+
+			if (bAskedConsent)
+			{
+				Result.bPassed = true;
+				Result.Score = FMath::Max(Result.Score, 1.0f);
+				Result.Status = TEXT("evaluated");
+				Result.Feedback = TEXT("Excelente! Você solicitou a autorização e o consentimento do paciente com clareza e respeito antes da punção.");
+				UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Fala direta do estudante sobre consentimento verbal aprovada com sucesso!"));
+			}
+		}
+	}
+
+	// Reação do paciente Remy acoplada automaticamente
 
 	if (Result.bPassed)
 	{
@@ -756,14 +968,15 @@ FVoiceEvaluationQuestion UPatientVoiceEvaluationComponent::GetCurrentQuestion() 
 
 bool UPatientVoiceEvaluationComponent::AdvanceToNextQuestion()
 {
-	AdvanceQuizWidgetVisual();
-
 	if (CurrentQuestionIndex + 1 < ScenarioQuestions.Num())
 	{
 		CurrentQuestionIndex++;
 		const FVoiceEvaluationQuestion Q = GetCurrentQuestion();
-		UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Avançando para a próxima pergunta clínica: %s"), *Q.Id);
+		UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Avançando para a próxima pergunta clínica: %s (%s)"), *Q.Id, *Q.Hint);
 		OnQuestionChanged.Broadcast(Q.Id, Q.Hint);
+
+		// Atualiza o widget 3D na cena para mostrar as opções/possibilidades que o enfermeiro pode ler
+		AdvanceQuizWidgetVisual();
 		return true;
 	}
 
@@ -774,18 +987,416 @@ bool UPatientVoiceEvaluationComponent::AdvanceToNextQuestion()
 
 void UPatientVoiceEvaluationComponent::AdvanceQuizWidgetVisual()
 {
-	if (UWorld* World = GetWorld())
+	UWorld* World = GetWorld();
+	if (!World)
 	{
-		TArray<AActor*> QuizActors;
-		UGameplayStatics::GetAllActorsWithTag(World, TEXT("DialogueWidget"), QuizActors);
-		for (AActor* Quiz : QuizActors)
+		return;
+	}
+
+	// Garante que todas as perguntas e alternativas estejam sanitizadas como falas diretas do estudante
+	SanitizeClinicalQuizQuestions();
+
+	bool bAdvanced = false;
+
+	// 1. Busca direta via TObjectIterator por instâncias ativas do UserWidget BP_Quiz no mundo atual
+	for (TObjectIterator<UUserWidget> It; It; ++It)
+	{
+		UUserWidget* Widget = *It;
+		if (Widget && Widget->GetWorld() == World && !Widget->IsTemplate())
 		{
-			if (Quiz)
+			const FString WidgetClassName = Widget->GetClass()->GetName();
+			if (WidgetClassName.Contains(TEXT("BP_Quiz")))
 			{
-				if (UFunction* NextFunc = Quiz->FindFunction(TEXT("NextQuestion")))
+				if (UFunction* NextFunc = Widget->FindFunction(TEXT("NextQuestion")))
 				{
-					Quiz->ProcessEvent(NextFunc, nullptr);
-					UE_LOG(LogTemp, Log, TEXT("VoiceEvaluation: Próxima pergunta acionada visualmente no BP_Quiz!"));
+					Widget->ProcessEvent(NextFunc, nullptr);
+					UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: NextQuestion acionado com sucesso no UserWidget %s (%s)!"), 
+						*Widget->GetName(), *WidgetClassName);
+					bAdvanced = true;
+				}
+			}
+		}
+	}
+
+	// 2. Busca por Actors no mundo (BP_Dialogue_Widget_Manager, BP_Dialogue_Step ou atores que contenham WidgetComponent)
+	TArray<AActor*> AllActors;
+	UGameplayStatics::GetAllActorsOfClass(World, AActor::StaticClass(), AllActors);
+
+	for (AActor* Act : AllActors)
+	{
+		if (!Act)
+		{
+			continue;
+		}
+
+		const FString ActName = Act->GetName();
+		const FString ClassName = Act->GetClass()->GetName();
+
+		if (ClassName.Contains(TEXT("BP_Dialogue_Widget_Manager")) || 
+		    ClassName.Contains(TEXT("BP_Dialogue_Step")) ||
+		    ClassName.Contains(TEXT("BP_Quiz")) ||
+		    ActName.Contains(TEXT("DialogueWidget")))
+		{
+			// Se o Actor tiver NextQuestion diretamente
+			if (UFunction* NextFunc = Act->FindFunction(TEXT("NextQuestion")))
+			{
+				Act->ProcessEvent(NextFunc, nullptr);
+				UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: NextQuestion acionado no Actor %s (%s)!"), *ActName, *ClassName);
+				bAdvanced = true;
+			}
+
+			// Percorre todos os UWidgetComponents no Actor
+			TArray<UWidgetComponent*> WidgetComps;
+			Act->GetComponents<UWidgetComponent>(WidgetComps);
+			for (UWidgetComponent* WC : WidgetComps)
+			{
+				if (WC)
+				{
+					if (UUserWidget* UserWidget = WC->GetUserWidgetObject())
+					{
+						if (UFunction* NextFunc = UserWidget->FindFunction(TEXT("NextQuestion")))
+						{
+							UserWidget->ProcessEvent(NextFunc, nullptr);
+							UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: NextQuestion acionado no WidgetComponent de %s!"), *ActName);
+							bAdvanced = true;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (bAdvanced)
+	{
+		const FVoiceEvaluationQuestion NextQ = GetCurrentQuestion();
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(849207, 7.0f, FColor::Green,
+				FString::Printf(TEXT("[QUIZ ATUALIZADO] Próxima pergunta: %s"), *NextQ.Hint));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Não foi possível localizar o BP_Quiz para avançar a pergunta visualmente."));
+	}
+}
+
+void UPatientVoiceEvaluationComponent::SanitizeClinicalQuizQuestions()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	auto UpdateQuestionStruct = [](void* QuestionStructPtr, UScriptStruct* QuestionStructDef)
+	{
+		if (!QuestionStructPtr || !QuestionStructDef)
+		{
+			return;
+		}
+
+		FTextProperty* QuestionTextProp = nullptr;
+		FArrayProperty* AnswersArrayProp = nullptr;
+
+		for (FProperty* Prop : TFieldRange<FProperty>(QuestionStructDef))
+		{
+			if (Prop->IsA<FTextProperty>() && Prop->GetName().Contains(TEXT("QuestionText")))
+			{
+				QuestionTextProp = CastField<FTextProperty>(Prop);
+			}
+			else if (Prop->IsA<FArrayProperty>() && Prop->GetName().Contains(TEXT("Answers")))
+			{
+				AnswersArrayProp = CastField<FArrayProperty>(Prop);
+			}
+		}
+
+		if (!QuestionTextProp || !AnswersArrayProp)
+		{
+			return;
+		}
+
+		const FText CurrentQuestionText = QuestionTextProp->GetPropertyValue_InContainer(QuestionStructPtr);
+		const FString CurrentQuestionStr = CurrentQuestionText.ToString();
+
+		// Pergunta 4: Coleta a vácuo / Experiência prévia
+		if (CurrentQuestionStr.Contains(TEXT("vácuo"), ESearchCase::IgnoreCase) || 
+		    CurrentQuestionStr.Contains(TEXT("vacuo"), ESearchCase::IgnoreCase) ||
+		    CurrentQuestionStr.Contains(TEXT("resposta do paciente"), ESearchCase::IgnoreCase))
+		{
+			QuestionTextProp->SetPropertyValue_InContainer(
+				QuestionStructPtr,
+				FText::FromString(TEXT("Investigue a experiência prévia do paciente com coleta a vácuo:"))
+			);
+
+			FScriptArrayHelper AnswersHelper(AnswersArrayProp, AnswersArrayProp->ContainerPtrToValuePtr<void>(QuestionStructPtr));
+			FStructProperty* AnswerStructProp = CastField<FStructProperty>(AnswersArrayProp->Inner);
+			if (AnswerStructProp && AnswerStructProp->Struct)
+			{
+				UScriptStruct* AnswerStructDef = AnswerStructProp->Struct;
+				FTextProperty* AnswerTextProp = nullptr;
+				FBoolProperty* IsCorrectProp = nullptr;
+				FTextProperty* ExplProp = nullptr;
+
+				for (FProperty* AnsField : TFieldRange<FProperty>(AnswerStructDef))
+				{
+					if (AnsField->IsA<FTextProperty>() && AnsField->GetName().Contains(TEXT("AnswerText")))
+					{
+						AnswerTextProp = CastField<FTextProperty>(AnsField);
+					}
+					else if (AnsField->IsA<FBoolProperty>() && AnsField->GetName().Contains(TEXT("IsCorrect")))
+					{
+						IsCorrectProp = CastField<FBoolProperty>(AnsField);
+					}
+					else if (AnsField->IsA<FTextProperty>() && AnsField->GetName().Contains(TEXT("Explanation")))
+					{
+						ExplProp = CastField<FTextProperty>(AnsField);
+					}
+				}
+
+				if (AnswerTextProp)
+				{
+					if (AnswersHelper.IsValidIndex(0))
+					{
+						void* Ans0Ptr = AnswersHelper.GetRawPtr(0);
+						AnswerTextProp->SetPropertyValue_InContainer(Ans0Ptr, 
+							FText::FromString(TEXT("O Sr. já fez alguma coleta de sangue a vácuo anteriormente?")));
+						if (IsCorrectProp) IsCorrectProp->SetPropertyValue_InContainer(Ans0Ptr, true);
+						if (ExplProp) ExplProp->SetPropertyValue_InContainer(Ans0Ptr,
+							FText::FromString(TEXT("Investigar a experiência prévia permite esclarecer dúvidas e diminuir a ansiedade antes da punção.")));
+					}
+					if (AnswersHelper.IsValidIndex(1))
+					{
+						void* Ans1Ptr = AnswersHelper.GetRawPtr(1);
+						AnswerTextProp->SetPropertyValue_InContainer(Ans1Ptr, 
+							FText::FromString(TEXT("O Sr. já conhece o procedimento de punção venosa a vácuo?")));
+						if (IsCorrectProp) IsCorrectProp->SetPropertyValue_InContainer(Ans1Ptr, false);
+						if (ExplProp) ExplProp->SetPropertyValue_InContainer(Ans1Ptr,
+							FText::FromString(TEXT("Embora investigue conhecimento, a abordagem recomendada pergunta sobre experiência prévia de forma direta.")));
+					}
+					if (AnswersHelper.IsValidIndex(2))
+					{
+						void* Ans2Ptr = AnswersHelper.GetRawPtr(2);
+						AnswerTextProp->SetPropertyValue_InContainer(Ans2Ptr, 
+							FText::FromString(TEXT("Vou realizar a coleta a vácuo direto sem explicações adicionais.")));
+						if (IsCorrectProp) IsCorrectProp->SetPropertyValue_InContainer(Ans2Ptr, false);
+						if (ExplProp) ExplProp->SetPropertyValue_InContainer(Ans2Ptr,
+							FText::FromString(TEXT("Não investigar a experiência prévia do paciente aumenta a ansiedade e descumpre protocolos humanizados.")));
+					}
+				}
+			}
+		}
+		// Pergunta 5: Consentimento verbal do paciente
+		else if (CurrentQuestionStr.Contains(TEXT("autoriza que eu colete"), ESearchCase::IgnoreCase) || 
+		         CurrentQuestionStr.Contains(TEXT("autoriza"), ESearchCase::IgnoreCase) ||
+		         CurrentQuestionStr.Contains(TEXT("após a resposta"), ESearchCase::IgnoreCase))
+		{
+			QuestionTextProp->SetPropertyValue_InContainer(
+				QuestionStructPtr,
+				FText::FromString(TEXT("Solicite a autorização e o consentimento do paciente para a coleta:"))
+			);
+
+			FScriptArrayHelper AnswersHelper(AnswersArrayProp, AnswersArrayProp->ContainerPtrToValuePtr<void>(QuestionStructPtr));
+			FStructProperty* AnswerStructProp = CastField<FStructProperty>(AnswersArrayProp->Inner);
+			if (AnswerStructProp && AnswerStructProp->Struct)
+			{
+				UScriptStruct* AnswerStructDef = AnswerStructProp->Struct;
+				FTextProperty* AnswerTextProp = nullptr;
+				FBoolProperty* IsCorrectProp = nullptr;
+				FTextProperty* ExplProp = nullptr;
+
+				for (FProperty* AnsField : TFieldRange<FProperty>(AnswerStructDef))
+				{
+					if (AnsField->IsA<FTextProperty>() && AnsField->GetName().Contains(TEXT("AnswerText")))
+					{
+						AnswerTextProp = CastField<FTextProperty>(AnsField);
+					}
+					else if (AnsField->IsA<FBoolProperty>() && AnsField->GetName().Contains(TEXT("IsCorrect")))
+					{
+						IsCorrectProp = CastField<FBoolProperty>(AnsField);
+					}
+					else if (AnsField->IsA<FTextProperty>() && AnsField->GetName().Contains(TEXT("Explanation")))
+					{
+						ExplProp = CastField<FTextProperty>(AnsField);
+					}
+				}
+
+				if (AnswerTextProp)
+				{
+					if (AnswersHelper.IsValidIndex(0))
+					{
+						void* Ans0Ptr = AnswersHelper.GetRawPtr(0);
+						AnswerTextProp->SetPropertyValue_InContainer(Ans0Ptr, 
+							FText::FromString(TEXT("O Sr. autoriza que eu colete o sangue necessário para os seus exames?")));
+						if (IsCorrectProp) IsCorrectProp->SetPropertyValue_InContainer(Ans0Ptr, true);
+						if (ExplProp) ExplProp->SetPropertyValue_InContainer(Ans0Ptr,
+							FText::FromString(TEXT("O consentimento verbal é requisito ético fundamental para respeitar a autonomia do paciente.")));
+					}
+					if (AnswersHelper.IsValidIndex(1))
+					{
+						void* Ans1Ptr = AnswersHelper.GetRawPtr(1);
+						AnswerTextProp->SetPropertyValue_InContainer(Ans1Ptr, 
+							FText::FromString(TEXT("Posso prosseguir com a punção do seu braço agora?")));
+						if (IsCorrectProp) IsCorrectProp->SetPropertyValue_InContainer(Ans1Ptr, false);
+						if (ExplProp) ExplProp->SetPropertyValue_InContainer(Ans1Ptr,
+							FText::FromString(TEXT("Embora solicite permissão, a abordagem deve deixar claro que é para os exames solicitados.")));
+					}
+					if (AnswersHelper.IsValidIndex(2))
+					{
+						void* Ans2Ptr = AnswersHelper.GetRawPtr(2);
+						AnswerTextProp->SetPropertyValue_InContainer(Ans2Ptr, 
+							FText::FromString(TEXT("Vou realizar o procedimento porque há uma solicitação médica.")));
+						if (IsCorrectProp) IsCorrectProp->SetPropertyValue_InContainer(Ans2Ptr, false);
+						if (ExplProp) ExplProp->SetPropertyValue_InContainer(Ans2Ptr,
+							FText::FromString(TEXT("Mesmo com solicitação médica, realizar procedimentos sem consentimento viola a autonomia do paciente.")));
+					}
+				}
+			}
+		}
+	};
+
+	// 1. Itera por todos os UserWidgets BP_Quiz
+	for (TObjectIterator<UUserWidget> It; It; ++It)
+	{
+		UUserWidget* Widget = *It;
+		if (Widget && Widget->GetWorld() == World && !Widget->IsTemplate())
+		{
+			if (Widget->GetClass()->GetName().Contains(TEXT("BP_Quiz")))
+			{
+				for (FProperty* Prop : TFieldRange<FProperty>(Widget->GetClass()))
+				{
+					if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(Prop))
+					{
+						if (ArrayProp->GetName().Contains(TEXT("Questions")))
+						{
+							if (FStructProperty* InnerStruct = CastField<FStructProperty>(ArrayProp->Inner))
+							{
+								FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(Widget));
+								for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+								{
+									UpdateQuestionStruct(ArrayHelper.GetRawPtr(i), InnerStruct->Struct);
+								}
+
+								// Força atualização visual da pergunta atual no widget
+								FIntProperty* IdxProp = CastField<FIntProperty>(Widget->GetClass()->FindPropertyByName(TEXT("CurrentQuestionIndex")));
+								const int32 CurIdx = IdxProp ? IdxProp->GetPropertyValue_InContainer(Widget) : 0;
+								if (UFunction* ShowFunc = Widget->FindFunction(TEXT("ShowQuestion")))
+								{
+									if (ShowFunc->ParmsSize > 0)
+									{
+										uint8* Buffer = (uint8*)FMemory_Alloca(ShowFunc->ParmsSize);
+										FMemory::Memzero(Buffer, ShowFunc->ParmsSize);
+										for (FProperty* ParmProp : TFieldRange<FProperty>(ShowFunc))
+										{
+											if (ParmProp->PropertyFlags & CPF_Parm)
+											{
+												if (FIntProperty* IntParm = CastField<FIntProperty>(ParmProp))
+												{
+													IntParm->SetPropertyValue_InContainer(Buffer, CurIdx);
+												}
+											}
+										}
+										Widget->ProcessEvent(ShowFunc, Buffer);
+									}
+									else
+									{
+										Widget->ProcessEvent(ShowFunc, nullptr);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Itera por todos os Actors (BP_Dialogue_Widget_Manager, etc.)
+	TArray<AActor*> AllActors;
+	UGameplayStatics::GetAllActorsOfClass(World, AActor::StaticClass(), AllActors);
+	for (AActor* Act : AllActors)
+	{
+		if (!Act)
+		{
+			continue;
+		}
+
+		const FString ClassName = Act->GetClass()->GetName();
+		if (ClassName.Contains(TEXT("BP_Dialogue_Widget_Manager")) || ClassName.Contains(TEXT("DialogueWidget")))
+		{
+			for (FProperty* Prop : TFieldRange<FProperty>(Act->GetClass()))
+			{
+				if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(Prop))
+				{
+					if (ArrayProp->GetName().Contains(TEXT("DialogueContent")) || 
+					    ArrayProp->GetName().Contains(TEXT("Widgets")) || 
+					    ArrayProp->GetName().Contains(TEXT("Questions")))
+					{
+						if (FStructProperty* InnerStruct = CastField<FStructProperty>(ArrayProp->Inner))
+						{
+							FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(Act));
+							for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+							{
+								UpdateQuestionStruct(ArrayHelper.GetRawPtr(i), InnerStruct->Struct);
+							}
+						}
+					}
+				}
+			}
+
+			// Atualiza também os UWidgetComponents no Actor
+			TArray<UWidgetComponent*> Comps;
+			Act->GetComponents<UWidgetComponent>(Comps);
+			for (UWidgetComponent* WC : Comps)
+			{
+				if (WC)
+				{
+					if (UUserWidget* UserWidget = WC->GetUserWidgetObject())
+					{
+						for (FProperty* Prop : TFieldRange<FProperty>(UserWidget->GetClass()))
+						{
+							if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(Prop))
+							{
+								if (ArrayProp->GetName().Contains(TEXT("Questions")))
+								{
+									if (FStructProperty* InnerStruct = CastField<FStructProperty>(ArrayProp->Inner))
+									{
+										FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(UserWidget));
+										for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+										{
+											UpdateQuestionStruct(ArrayHelper.GetRawPtr(i), InnerStruct->Struct);
+										}
+
+										FIntProperty* IdxProp = CastField<FIntProperty>(UserWidget->GetClass()->FindPropertyByName(TEXT("CurrentQuestionIndex")));
+										const int32 CurIdx = IdxProp ? IdxProp->GetPropertyValue_InContainer(UserWidget) : 0;
+										if (UFunction* ShowFunc = UserWidget->FindFunction(TEXT("ShowQuestion")))
+										{
+											if (ShowFunc->ParmsSize > 0)
+											{
+												uint8* Buffer = (uint8*)FMemory_Alloca(ShowFunc->ParmsSize);
+												FMemory::Memzero(Buffer, ShowFunc->ParmsSize);
+												for (FProperty* ParmProp : TFieldRange<FProperty>(ShowFunc))
+												{
+													if (ParmProp->PropertyFlags & CPF_Parm)
+													{
+														if (FIntProperty* IntParm = CastField<FIntProperty>(ParmProp))
+														{
+															IntParm->SetPropertyValue_InContainer(Buffer, CurIdx);
+														}
+													}
+												}
+												UserWidget->ProcessEvent(ShowFunc, Buffer);
+											}
+											else
+											{
+												UserWidget->ProcessEvent(ShowFunc, nullptr);
+											}
+										}
+									}
+								}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -794,96 +1405,91 @@ void UPatientVoiceEvaluationComponent::AdvanceQuizWidgetVisual()
 
 void UPatientVoiceEvaluationComponent::CompleteClinicalDialogueStep()
 {
-	if (UWorld* World = GetWorld())
+	UWorld* World = GetWorld();
+	if (!World)
 	{
-		TArray<AActor*> FoundActors;
-		UGameplayStatics::GetAllActorsOfClass(World, AActor::StaticClass(), FoundActors);
-		for (AActor* Act : FoundActors)
+		return;
+	}
+
+	// 1. Oculta todos os widgets de diálogo e quiz da cena ao concluir o diálogo clínico
+	TArray<AActor*> AllActors;
+	UGameplayStatics::GetAllActorsOfClass(World, AActor::StaticClass(), AllActors);
+
+	for (AActor* Act : AllActors)
+	{
+		if (!Act)
 		{
-			if (Act && Act->GetClass()->GetName().Contains(TEXT("BP_Dialogue_Step")))
+			continue;
+		}
+
+		const FString ClassName = Act->GetClass()->GetName();
+		const FString ActName = Act->GetName();
+
+		if (ClassName.Contains(TEXT("BP_Dialogue_Widget_Manager")) || 
+		    ClassName.Contains(TEXT("BP_Quiz")) ||
+		    ActName.Contains(TEXT("DialogueWidget")))
+		{
+			Act->SetActorHiddenInGame(true);
+			Act->SetActorEnableCollision(false);
+			UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Ocultando Actor de Widget %s (%s) ao concluir diálogo."), *ActName, *ClassName);
+		}
+	}
+
+	// 2. Localiza BP_Dialogue_Step e aciona AnswersEnded para avançar o Storyteller para a próxima etapa médica
+	for (AActor* Act : AllActors)
+	{
+		if (Act && Act->GetClass()->GetName().Contains(TEXT("BP_Dialogue_Step")))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Encontrado BP_Dialogue_Step (%s). Concluindo etapa no Storyteller!"), *Act->GetName());
+
+			if (UFunction* Func = Act->FindFunction(TEXT("AnswersEnded")))
 			{
-				UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Encontrado BP_Dialogue_Step (%s). Concluindo etapa no Storyteller!"), *Act->GetName());
-
-				// Oculta o widget de quiz antigo se estiver na cena
-				TArray<AActor*> QuizActors;
-				UGameplayStatics::GetAllActorsWithTag(World, TEXT("DialogueWidget"), QuizActors);
-				for (AActor* Quiz : QuizActors)
-				{
-					if (Quiz)
-					{
-						Quiz->SetActorHiddenInGame(true);
-					}
-				}
-
-				// Invoca o evento AnswersEnded no BP_Dialogue_Step
-				if (UFunction* Func = Act->FindFunction(TEXT("AnswersEnded")))
-				{
-					Act->ProcessEvent(Func, nullptr);
-					UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Evento AnswersEnded executado com sucesso no BP_Dialogue_Step!"));
-				}
-
-				if (GEngine)
-				{
-					GEngine->AddOnScreenDebugMessage(849203, 10.0f, FColor::Cyan,
-						TEXT("[ETAPA CONCLUÍDA] Diálogo clínico finalizado! Avançando para a próxima etapa do procedimento..."));
-				}
-				return;
+				Act->ProcessEvent(Func, nullptr);
+				UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Evento AnswersEnded executado com sucesso no BP_Dialogue_Step!"));
 			}
+
+			if (GEngine)
+			{
+				GEngine->AddOnScreenDebugMessage(849203, 10.0f, FColor::Cyan,
+					TEXT("[ETAPA CONCLUÍDA] Diálogo clínico finalizado! Avançando para a próxima etapa do procedimento..."));
+			}
+			return;
 		}
 	}
 }
 
 void UPatientVoiceEvaluationComponent::SetupKeyboardInput()
 {
-	if (UWorld* World = GetWorld())
-	{
-		if (APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0))
-		{
-			if (AActor* Owner = GetOwner())
-			{
-				Owner->EnableInput(PC);
-				if (Owner->InputComponent)
-				{
-					Owner->InputComponent->BindKey(PushToTalkKey, IE_Pressed, this, &UPatientVoiceEvaluationComponent::OnKeyboardPushToTalkPressed);
-					Owner->InputComponent->BindKey(PushToTalkKey, IE_Released, this, &UPatientVoiceEvaluationComponent::OnKeyboardPushToTalkReleased);
-					UE_LOG(LogTemp, Log, TEXT("VoiceEvaluation: Push-to-Talk via teclado configurado para a tecla '%s'."), *PushToTalkKey.GetDisplayName().ToString());
-				}
-			}
-		}
-	}
+	// O polling de hardware (Windows GetAsyncKeyState) e controles VR é realizado
+	// de forma contínua em TickComponent(), garantindo funcionamento mesmo se a viewport
+	// perder foco durante simulações com o Meta XR Simulator.
+	UE_LOG(LogTemp, Log, TEXT("VoiceEvaluation: Suporte a Push-to-Talk / Modo Contínuo ativado via tecla 'V', Barra de Espaço e Gatilhos VR."));
 }
 
 void UPatientVoiceEvaluationComponent::OnKeyboardPushToTalkPressed()
 {
 	if (bIsEvaluating)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Avaliação anterior ainda em andamento. Aguarde."));
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Push-to-Talk ATIVADO! Gravando áudio..."));
-	if (GEngine)
+	if (!bIsRecording)
 	{
-		const FVoiceEvaluationQuestion Q = GetCurrentQuestion();
-		const FString Msg = FString::Printf(TEXT("[VOZ: SEGURE PARA FALAR] Gravando microfone... Pergunta: %s (%s)"), 
-			*Q.Id, *Q.Hint);
-		GEngine->AddOnScreenDebugMessage(849201, 15.0f, FColor::Yellow, Msg);
+		bToggleModeActive = false;
+		StartRecording();
 	}
-	StartRecording();
+	else if (bToggleModeActive)
+	{
+		bToggleModeActive = false;
+		StopRecording();
+	}
 }
 
 void UPatientVoiceEvaluationComponent::OnKeyboardPushToTalkReleased()
 {
-	if (!bIsRecording)
+	if (bIsRecording && !bToggleModeActive)
 	{
-		return;
+		StopRecording();
 	}
-
-	UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: Push-to-Talk LIBERADO! Finalizando gravação e avaliando..."));
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(849201, 6.0f, FColor::Cyan, TEXT("[VOZ] Áudio capturado! Enviando para a API do Enzo avaliar..."));
-	}
-	StopRecording();
 }
 

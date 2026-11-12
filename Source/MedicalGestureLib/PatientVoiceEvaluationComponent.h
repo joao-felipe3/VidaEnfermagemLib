@@ -235,6 +235,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Voice Evaluation|Flow")
 	void AdvanceQuizWidgetVisual();
 
+	// Sanitiza os textos e alternativas do quiz para serem falas diretas do estudante ao paciente
+	UFUNCTION(BlueprintCallable, Category = "Voice Evaluation|Flow")
+	void SanitizeClinicalQuizQuestions();
+
 	// Finaliza a etapa de diálogo no Storyteller (chama AnswersEnded no BP_Dialogue_Step)
 	UFUNCTION(BlueprintCallable, Category = "Voice Evaluation|Flow")
 	void CompleteClinicalDialogueStep();
@@ -286,6 +290,9 @@ private:
 
 	double HealthPingStartTime = 0.0;
 	double EvaluationStartTime = 0.0;
+	double RecordingStartTime = 0.0;
+	float KeyDownDuration = 0.0f;
 	bool bWasPushToTalkKeyDown = false;
+	bool bToggleModeActive = false;
 };
 
