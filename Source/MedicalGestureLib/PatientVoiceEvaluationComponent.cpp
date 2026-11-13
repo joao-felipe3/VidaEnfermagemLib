@@ -39,6 +39,29 @@ void UPatientVoiceEvaluationComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// 0. Permite sobrescrever BaseUrl e ApiKey via DefaultEngine.ini ([VoiceEvaluation])
+	if (GConfig)
+	{
+		FString ConfigUrl;
+		if (GConfig->GetString(TEXT("VoiceEvaluation"), TEXT("BaseUrl"), ConfigUrl, GEngineIni))
+		{
+			ConfigUrl.TrimQuotesInline();
+			// Evita truncamento do parser ini se vier sem aspas ("http:")
+			if (ConfigUrl.Equals(TEXT("http:"), ESearchCase::IgnoreCase) || ConfigUrl.Equals(TEXT("https:"), ESearchCase::IgnoreCase))
+			{
+				ConfigUrl = TEXT("http://127.0.0.1:8000");
+			}
+			BaseUrl = ConfigUrl;
+			UE_LOG(LogTemp, Warning, TEXT("VoiceEvaluation: BaseUrl configurada via DefaultEngine.ini: %s"), *BaseUrl);
+		}
+		FString ConfigApiKey;
+		if (GConfig->GetString(TEXT("VoiceEvaluation"), TEXT("ApiKey"), ConfigApiKey, GEngineIni))
+		{
+			ConfigApiKey.TrimQuotesInline();
+			ApiKey = ConfigApiKey;
+		}
+	}
+
 	// 1. Configura as perguntas padrão do cenário se ainda não estiverem preenchidas
 	if (ScenarioQuestions.IsEmpty())
 	{
